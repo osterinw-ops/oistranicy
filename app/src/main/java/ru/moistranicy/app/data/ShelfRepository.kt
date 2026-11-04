@@ -1,0 +1,131 @@
+package ru.moistranicy.app.data
+
+import android.content.Context
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.util.concurrent.Executors
+
+/** Локальная полка: хранится в JSON-файле на телефоне. */
+object ShelfRepository {
+    private lateinit var file: File
+    private val io = Executors.newSingleThreadExecutor()
+    private val _entries = MutableStateFlow<Map<String, ShelfEntry>>(emptyMap())
+    val entries: StateFlow<Map<String, ShelfEntry>> = _entries
+
+    fun init(context: Context) {
+        if (::file.isInitialized) return
+        file = File(context.filesDir, "shelf.json")
+        _entries.value = runCatching { load() }.getOrDefault(emptyMap())
+    }
+
+    fun get(id: String): ShelfEntry? = _entries.value[id]
+
+    fun setStatus(book: Book, status: ReadStatus) {
+        val now = System.currentTimeMillis()
+        val old = _entries.value[book.id]
+        val entry = ShelfEntry(
+            book = book,
+            status = status,
+            rating = old?.rating,
+            addedAt = old?.addedAt ?: now,
+            updatedAt = now,
+            startedAt = old?.startedAt ?: if (status == ReadStatus.READING || status == ReadStatus.READ) now else null,
+            finishedAt = if (status == ReadStatus.READ) (old?.finishedAt ?: now) else old?.finishedAt,
+        )
+        update(_entries.value + (book.id to entry))
+    }
+
+    fun setRating(id: String, rating: Int?) {
+        val old = _entries.value[id] ?: return
+        update(_entries.value + (id to old.copy(rating = rating, updatedAt = System.currentTimeMillis())))
+    }
+
+    fun remove(id: String) = update(_entries.value - id)
+
+    private fun update(map: Map<String, ShelfEntry>) {
+        _entries.value = map
+        val json = toJson(map.values).toString()
+        io.execute { runCatching { file.writeText(json) } }
+    }
+
+    private fun load(): Map<String, ShelfEntry> {
+        if (!file.exists()) return emptyMap()
+        val arr = JSONArray(file.readText())
+        val result = LinkedHashMap<String, ShelfEntry>()
+        for (i in 0 until arr.length()) {
+            val e = entryFromJson(arr.getJSONObject(i))
+            result[e.book.id] = e
+        }
+        return result
+    }
+
+    // ---------- JSON ----------
+
+    private fun toJson(list: Collection<ShelfEntry>) = JSONArray().apply {
+        list.forEach { e ->
+            put(JSONObject().apply {
+                put("book", bookToJson(e.book))
+                put("status", e.status.name)
+                putOpt("rating", e.rating)
+                put("addedAt", e.addedAt)
+                put("updatedAt", e.updatedAt)
+                putOpt("startedAt", e.startedAt)
+                putOpt("finishedAt", e.finishedAt)
+            })
+        }
+    }
+
+    private fun entryFromJson(o: JSONObject) = ShelfEntry(
+        book = bookFromJson(o.getJSONObject("book")),
+        status = runCatching { ReadStatus.valueOf(o.getString("status")) }.getOrDefault(ReadStatus.WANT),
+        rating = o.optIntOrNull("rating"),
+        addedAt = o.optLong("addedAt"),
+        updatedAt = o.optLong("updatedAt", o.optLong("addedAt")),
+        startedAt = o.optLongOrNull("startedAt"),
+        finishedAt = o.optLongOrNull("finishedAt"),
+    )
+
+    private fun bookToJson(b: Book) = JSONObject().apply {
+        put("id", b.id)
+        put("title", b.title)
+        put("authors", JSONArray().apply {
+            b.authors.forEach { a -> put(JSONObject().apply { putOpt("id", a.id); put("name", a.name) }) }
+        })
+        putOpt("coverUrl", b.coverUrl)
+        put("annotation", b.annotation)
+        put("genres", JSONArray(b.genres))
+        putOpt("year", b.year)
+        putOpt("language", b.language)
+        putOpt("seriesId", b.seriesId)
+        putOpt("seriesName", b.seriesName)
+        putOpt("seriesNumber", b.seriesNumber)
+    }
+
+    private fun bookFromJson(o: JSONObject): Book {
+        val authors = o.optJSONArray("authors")
+        val genres = o.optJSONArray("genres")
+        return Book(
+            id = o.getString("id"),
+            title = o.optString("title"),
+            authors = (0 until (authors?.length() ?: 0)).map {
+                val a = authors!!.getJSONObject(it)
+                Person(a.optStringOrNull("id"), a.optString("name"))
+            },
+            coverUrl = o.optStringOrNull("coverUrl"),
+            annotation = o.optString("annotation"),
+            genres = (0 until (genres?.length() ?: 0)).map { genres!!.getString(it) },
+            year = o.optStringOrNull("year"),
+            language = o.optStringOrNull("language"),
+            seriesId = o.optStringOrNull("seriesId"),
+            seriesName = o.optStringOrNull("seriesName"),
+            seriesNumber = o.optIntOrNull("seriesNumber"),
+        )
+    }
+
+    private fun JSONObject.optStringOrNull(k: String): String? = if (has(k) && !isNull(k)) getString(k) else null
+    private fun JSONObject.optIntOrNull(k: String): Int? = if (has(k) && !isNull(k)) getInt(k) else null
+    private fun JSONObject.optLongOrNull(k: String): Long? = if (has(k) && !isNull(k)) getLong(k) else null
+}
