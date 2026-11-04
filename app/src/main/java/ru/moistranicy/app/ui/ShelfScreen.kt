@@ -92,6 +92,8 @@ private data class Group(
     val dropped: Boolean = false,
     val posterUrl: String? = null,
     val bookCount: Int? = null,
+    /** Отдельные книги — с горизонтальным постером. */
+    val singles: Boolean = false,
 )
 
 /**
@@ -108,6 +110,13 @@ private fun buildGroups(
     for (c in cycles.values) {
         val published = c.books.filter { it.published }
         val read = published.count { shelf[it.id]?.status == ReadStatus.READ }
+        val fullyRead = published.isNotEmpty() && read == published.size
+        // книги отслеживаемого цикла не попадают в «Вне циклов» ни в одной вкладке
+        c.books.forEach { used += it.id }
+        // «Прочитал» — только циклы, прочитанные полностью (и не брошенные);
+        // прочитанный целиком цикл в «Хочу прочитать» не показываем, пока не выйдет новая книга
+        if (status == ReadStatus.READ && (!fullyRead || c.dropped)) continue
+        if (status == ReadStatus.WANT && fullyRead) continue
         val lines = c.books.withIndex().filter { (_, b) ->
             val st = shelf[b.id]?.status
             // брошенный цикл больше не предлагаем: в «Хочу» — только явно отмеченные
@@ -165,6 +174,7 @@ private fun buildGroups(
             Line(e.book.id, null, e.book.title, listOfNotNull(e.book.authorsLine.ifEmpty { null }, e.book.year).joinToString(", "), false, true)
         },
         hasNew = false,
+        singles = true,
     )
 }
 
@@ -267,7 +277,12 @@ fun ShelfScreen(onBook: (String) -> Unit) {
                                 )
                             }
                         }
-                        if (open) {
+                        if (g.singles) {
+                            items(g.lines, key = { g.key + "/" + it.id }) { l ->
+                                val e = shelf[l.id]
+                                if (e != null) ReadingRow(e, cycles) { onBook(l.id) }
+                            }
+                        } else if (open) {
                             items(g.lines, key = { g.key + "/" + it.id }) { l ->
                                 CompactBookLine(
                                     number = l.number,
@@ -328,6 +343,7 @@ private fun SeriesHeader(g: Group, open: Boolean, onToggle: () -> Unit, onBook: 
             val unread = g.unread
             val info = when {
                 g.dropped -> "цикл брошен · не прочитано: ${unread ?: 0}"
+                unread == 0 -> "прочитан полностью"
                 unread == null -> "книг на полке: ${g.lines.size}"
                 unread == 0 -> "всё прочитано"
                 else -> "не прочитано: $unread из ${g.total}"
@@ -370,8 +386,8 @@ private fun ReadingRow(e: ShelfEntry, cycles: Map<String, TrackedCycle>, onClick
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        BookCover(b, Modifier.width(60.dp), corner = 6.dp)
-        Spacer(Modifier.width(14.dp))
+        BookPosterWide(b)
+        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 b.title,

@@ -180,3 +180,70 @@ fun SeriesPoster(
         )
     }
 }
+
+/**
+ * Горизонтальный постер отдельной книги: фон — затемнённая обложка во всю ширину,
+ * слева — обложка целиком. Без обложки — градиент, символ жанра и название.
+ */
+@Composable
+fun BookPosterWide(book: ru.moistranicy.app.data.Book, modifier: Modifier = Modifier) {
+    val grad = POSTER_GRADIENTS[(book.title.hashCode() and 0x7fffffff) % POSTER_GRADIENTS.size]
+    Box(
+        modifier
+            .size(width = 120.dp, height = 72.dp)
+            .shadow(3.dp, RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(8.dp))
+            .background(Brush.linearGradient(grad)),
+    ) {
+        // рисованный вариант (виден, если обложки нет)
+        Icon(
+            painterResource(themeIconFor(book.genres)),
+            contentDescription = null,
+            tint = Color.White.copy(alpha = 0.2f),
+            modifier = Modifier.size(64.dp).align(Alignment.CenterEnd).offset(x = 8.dp),
+        )
+        Text(
+            book.title,
+            color = Color.White,
+            fontSize = 10.sp,
+            lineHeight = 11.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp, end = 30.dp),
+        )
+        if (book.coverUrl != null) {
+            // фон: обложка, обрезанная по ширине и затемнённая
+            AsyncImage(
+                model = book.coverUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+            Box(
+                Modifier.fillMaxSize().background(
+                    Brush.horizontalGradient(listOf(Color.Black.copy(alpha = 0.15f), Color.Black.copy(alpha = 0.65f))),
+                ),
+            )
+            // обложка целиком слева
+            AsyncImage(
+                model = book.coverUrl,
+                contentDescription = book.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 6.dp)
+                    .size(width = 42.dp, height = 60.dp)
+                    .shadow(2.dp, RoundedCornerShape(3.dp))
+                    .clip(RoundedCornerShape(3.dp)),
+            )
+        }
+        Box(
+            Modifier
+                .align(Alignment.TopEnd)
+                .padding(end = 8.dp)
+                .size(width = 5.dp, height = 10.dp)
+                .background(Coral),
+        )
+    }
+}
