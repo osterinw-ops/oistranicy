@@ -244,6 +244,37 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                 }
             }
 
+            // «Бросить весь цикл»: для книги из цикла или для самого цикла
+            val dropTarget = if (book.isCycle && details?.children?.isNotEmpty() == true) id else cycleId
+            if (dropTarget != null) {
+                val tc = cycles[dropTarget]
+                if (tc?.dropped == true) {
+                    TextButton(onClick = { CycleRepository.undropCycle(dropTarget) }) {
+                        Text("Вернуться к циклу «${tc.name}»", style = MaterialTheme.typography.bodySmall)
+                    }
+                } else {
+                    TextButton(onClick = {
+                        scope.launch {
+                            try {
+                                if (dropTarget == id && details != null) CycleRepository.follow(details!!)
+                                else CycleRepository.ensureFollowed(dropTarget)
+                                CycleRepository.dropCycle(dropTarget)
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                followError = "Не удалось загрузить цикл: ${e.message}"
+                            }
+                        }
+                    }) {
+                        Text(
+                            "Бросить весь цикл" + (tc?.name?.let { " «$it»" } ?: ""),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            }
+
             if (entry != null) {
                 Spacer(Modifier.height(12.dp))
                 Text("Моя оценка", style = MaterialTheme.typography.titleSmall)

@@ -107,7 +107,7 @@ object FantLab {
                 workType = o.str("name_show_im").ifEmpty { null },
                 isCycle = o.str("name_eng") in CYCLE_TYPES,
                 communityRating = o.floatOrNull("midmark_by_weight") ?: o.floatOrNull("midmark"),
-            ).also { BookCache.put(it) }
+            ).also { BookCache.put(it); KnownAuthors.addAll(it.authors) }
         }
         Page(books, arr.length() >= PAGE_SIZE)
     }
@@ -121,6 +121,7 @@ object FantLab {
             val years = listOfNotNull(o.posInt("birthyear"), o.posInt("deathyear")).joinToString("–")
             val sub = listOf(o.str("name").takeIf { it != name }.orEmpty(), o.str("country"), years)
                 .filter { it.isNotEmpty() }.joinToString(" · ")
+            KnownAuthors.add(name, "fl-$id")
             AuthorHit("fl-$id", name, sub)
         }
         Page(hits, arr.length() >= PAGE_SIZE)
@@ -207,6 +208,7 @@ object FantLab {
             imageUrl = image(o.str("image")),
             years = years,
             sections = sections.filter { it.books.isNotEmpty() },
+            nameGenitive = o.str("name_rp").ifEmpty { o.str("name").ifEmpty { o.str("name_orig") } },
         )
     }
 
@@ -296,17 +298,62 @@ object FantLab {
         return (BookCache.get(book.id) ?: book).copy(published = book.published)
     }
 
+    /** Жанры из классификатора: основные по числу голосов + уверенные поджанры. */
     private fun genres(o: JSONObject): List<String> {
         val groups = o.optJSONObject("classificatory")?.optJSONArray("genre_group") ?: return emptyList()
         for (i in 0 until groups.length()) {
             val g = groups.optJSONObject(i) ?: continue
             if (!g.str("label").startsWith("Жанр")) continue
             val arr = g.optJSONArray("genre") ?: continue
-            return (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
+            val top = (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
                 .sortedByDescending { it.optInt("votes") }
-                .map { it.str("label") }.filter { it.isNotEmpty() }.take(4)
+            val out = LinkedHashSet<String>()
+            top.take(3).forEach { t ->
+                t.str("label").takeIf { it.isNotEmpty() }?.let { out += it }
+                val sub = t.optJSONArray("genre") ?: return@forEach
+                (0 until sub.length()).mapNotNull { sub.optJSONObject(it) }
+                    .filter { (it.floatOrNull("percent") ?: 0f) >= 0.3f }
+                    .sortedByDescending { it.optInt("votes") }
+                    .take(2)
+                    .forEach { s -> s.str("label").takeIf { l -> l.isNotEmpty() }?.let { out += it } }
+            }
+            return out.take(6)
         }
         return emptyList()
+    }
+
+    /** Похожие произведения по данным FantLab. */
+    suspend fun similars(id: String): List<Book> = withContext(Dispatchers.IO) {
+        val arr = JSONArray(Http.get("$API/work/${id.removePrefix("fl-")}/similars"))
+        (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            val wid = o.posInt("id") ?: return@mapNotNull null
+            val authors = o.optJSONObject("creators")?.optJSONArray("authors")?.let { a ->
+                (0 until a.length()).mapNotNull { k ->
+                    val x = a.optJSONObject(k) ?: return@mapNotNull null
+                    val name = x.str("name")
+                    if (name.isEmpty()) null else Person(x.posInt("id")?.let { "fl-$it" }, name)
+                }
+            }.orEmpty()
+            val saga = o.optJSONObject("saga")
+            Book(
+                id = "fl-$wid",
+                title = o.str("name").ifEmpty { o.str("name_orig") }.ifEmpty { return@mapNotNull null },
+                authors = authors,
+                coverUrl = image(o.str("image")),
+                annotation = cleanText(o.str("description")),
+                genres = emptyList(),
+                year = o.posInt("year")?.toString(),
+                language = null,
+                seriesId = saga?.posInt("id")?.let { "fl-$it" },
+                seriesName = saga?.str("name")?.ifEmpty { null },
+                seriesNumber = null,
+                workType = o.str("name_type").ifEmpty { null },
+                isCycle = o.str("name_type_icon") in CYCLE_TYPES,
+                communityRating = o.optJSONObject("stat")?.floatOrNull("rating"),
+                published = o.optInt("published", 1) == 1,
+            ).also { BookCache.put(it) }
+        }
     }
 }
 
@@ -349,7 +396,7 @@ object GoogleBooks {
                 workType = null,
                 isCycle = false,
                 communityRating = v.floatOrNull("averageRating")?.let { r -> r * 2 },
-            ).also { b -> BookCache.put(b) }
+            ).also { b -> BookCache.put(b); KnownAuthors.addAll(b.authors) }
         }
         val total = o.optInt("totalItems", 0)
         Page(books, books.isNotEmpty() && start + PAGE_SIZE < total)

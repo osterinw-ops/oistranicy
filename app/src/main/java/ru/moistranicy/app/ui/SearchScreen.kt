@@ -46,6 +46,10 @@ import ru.moistranicy.app.data.Book
 import ru.moistranicy.app.data.FantLab
 import ru.moistranicy.app.data.GoogleBooks
 import ru.moistranicy.app.data.Page
+import ru.moistranicy.app.data.Typos
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.text.font.FontWeight
 
 /** Постраничная загрузка результатов. */
 class PagedState<T>(private val loader: suspend (query: String, page: Int) -> Page<T>) {
@@ -109,6 +113,11 @@ private object SearchHolder {
     var google = PagedState<Book> { q, p -> GoogleBooks.search(q, p) }
     /** Меняется при сбросе — поле ввода получает фокус. */
     var resetNonce by mutableIntStateOf(0)
+    /** Пользователь набирает текст (показываем подсказки авторов). */
+    var typing by mutableStateOf(false)
+    /** «Возможно, вы имели в виду …» для запроса didYouMeanFor. */
+    var didYouMean by mutableStateOf<String?>(null)
+    var didYouMeanFor by mutableStateOf<String?>(null)
 }
 
 /** Полный сброс поиска (повторное нажатие на вкладку «Поиск»). */
@@ -118,6 +127,9 @@ fun resetSearch() {
     SearchHolder.works = PagedState { q, p -> FantLab.searchWorks(q, p) }
     SearchHolder.authors = PagedState { q, p -> FantLab.searchAuthors(q, p) }
     SearchHolder.google = PagedState { q, p -> GoogleBooks.search(q, p) }
+    SearchHolder.typing = false
+    SearchHolder.didYouMean = null
+    SearchHolder.didYouMeanFor = null
     SearchHolder.resetNonce++
 }
 
@@ -135,6 +147,7 @@ fun SearchScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit) {
         val q = SearchHolder.query.trim()
         if (q.length < 2) return
         focus.clearFocus()
+        SearchHolder.typing = false
         when (SearchHolder.mode) {
             SearchMode.WORKS -> SearchHolder.works.search(scope, q)
             SearchMode.AUTHORS -> SearchHolder.authors.search(scope, q)
@@ -146,7 +159,7 @@ fun SearchScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit) {
         Column(Modifier.padding(pad)) {
             OutlinedTextField(
                 value = SearchHolder.query,
-                onValueChange = { SearchHolder.query = it },
+                onValueChange = { SearchHolder.query = it; SearchHolder.typing = true },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).focusRequester(focusRequester),
                 placeholder = { Text("Название книги или автор") },
                 leadingIcon = { Icon(Icons.Filled.Search, null) },
@@ -177,6 +190,60 @@ fun SearchScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit) {
                     )
                 }
             }
+            // подсказки авторов при наборе (в т. ч. с исправлением раскладки и опечаток)
+            val q = SearchHolder.query.trim()
+            val hints = remember(q) {
+                if (q.length < 3) emptyList() else {
+                    val layout = Typos.fixLayout(q)
+                    val base = Typos.suggestKnown(layout ?: q, 5).map { it.first }
+                    (listOfNotNull(layout) + base).distinct().filter { !it.equals(q, true) }.take(5)
+                }
+            }
+            if (SearchHolder.typing && hints.isNotEmpty()) {
+                Column(Modifier.padding(bottom = 4.dp)) {
+                    hints.forEach { h ->
+                        Text(
+                            h,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { SearchHolder.query = h; run() }
+                                .padding(horizontal = 20.dp, vertical = 6.dp),
+                        )
+                    }
+                }
+            }
+
+            // «Возможно, вы имели в виду …», если поиск ничего не нашёл
+            val current: PagedState<*> = when (SearchHolder.mode) {
+                SearchMode.WORKS -> SearchHolder.works
+                SearchMode.AUTHORS -> SearchHolder.authors
+                SearchMode.GOOGLE -> SearchHolder.google
+            }
+            val doneEmpty = !current.loading && current.loadedQuery != null && current.items.isEmpty()
+            LaunchedEffect(doneEmpty, current.loadedQuery) {
+                val lq = current.loadedQuery
+                if (doneEmpty && lq != null && SearchHolder.didYouMeanFor != lq) {
+                    SearchHolder.didYouMeanFor = lq
+                    SearchHolder.didYouMean = null
+                    SearchHolder.didYouMean = Typos.didYouMean(lq)
+                }
+            }
+            val dym = SearchHolder.didYouMean
+            if (doneEmpty && dym != null && SearchHolder.didYouMeanFor == current.loadedQuery) {
+                Row(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                    Text("Возможно, вы имели в виду: ", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        dym,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable { SearchHolder.query = dym; run() },
+                    )
+                }
+            }
+
             if (SearchHolder.query.trim().length >= 2) {
                 ExternalSourcesRow(
                     SearchHolder.query,

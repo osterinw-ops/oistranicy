@@ -5,6 +5,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import ru.moistranicy.app.data.AppPrefs
+import ru.moistranicy.app.data.ThemeMode
 import androidx.compose.ui.graphics.Color
 
 val Violet = Color(0xFF7B6CF6)
@@ -43,10 +48,20 @@ private val Light = lightColorScheme(
     onSurfaceVariant = Color(0xFF555070),
 )
 
+/** Тёмная ли сейчас тема с учётом выбора в настройках. */
+@Composable
+fun isAppDark(): Boolean = when (AppPrefs.theme) {
+    ThemeMode.SYSTEM -> isSystemInDarkTheme()
+    ThemeMode.LIGHT -> false
+    ThemeMode.DARK -> true
+}
+
 @Composable
 fun AppTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) Dark else Light,
-        content = content,
-    )
+    val density = LocalDensity.current
+    // размер шрифта из настроек умножается на системный
+    val scaled = Density(density.density, density.fontScale * AppPrefs.fontScale)
+    MaterialTheme(colorScheme = if (isAppDark()) Dark else Light) {
+        CompositionLocalProvider(LocalDensity provides scaled, content = content)
+    }
 }

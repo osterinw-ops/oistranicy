@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 
 package ru.moistranicy.app.ui
 
@@ -35,6 +35,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import ru.moistranicy.app.data.AppPrefs
+import ru.moistranicy.app.data.FONT_SCALES
+import ru.moistranicy.app.data.ThemeMode
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material3.FilterChip
 import ru.moistranicy.app.data.ReadStatus
 import ru.moistranicy.app.data.ShelfRepository
 import java.util.Calendar
@@ -129,6 +133,30 @@ private fun SettingsCard() {
             goal.toIntOrNull()?.let { AppPrefs.saveYearGoal(it) }
             goal = AppPrefs.yearGoal.toString()
         }) { Text("Сохранить") }
+
+        Spacer(Modifier.height(4.dp))
+        Text("Размер шрифта", style = MaterialTheme.typography.titleSmall)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FONT_SCALES.forEach { (label, scale) ->
+                FilterChip(
+                    selected = AppPrefs.fontScale == scale,
+                    onClick = { AppPrefs.saveFontScale(scale) },
+                    label = { Text(label) },
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("Тема", style = MaterialTheme.typography.titleSmall)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            ThemeMode.entries.forEach { m ->
+                FilterChip(
+                    selected = AppPrefs.theme == m,
+                    onClick = { AppPrefs.saveTheme(m) },
+                    label = { Text(m.title) },
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
         Text(
             "Данные о книгах: FantLab (fantlab.ru) и Google Книги. Полка хранится только на этом телефоне.",
             style = MaterialTheme.typography.bodySmall,

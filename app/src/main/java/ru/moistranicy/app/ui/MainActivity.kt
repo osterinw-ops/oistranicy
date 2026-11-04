@@ -5,7 +5,15 @@ package ru.moistranicy.app.ui
 import android.Manifest
 import android.content.Intent
 import android.os.Build
+import android.graphics.Color
 import android.os.Bundle
+import androidx.activity.SystemBarStyle
+import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.unit.sp
+import ru.moistranicy.app.data.AuthorStats
+import ru.moistranicy.app.data.KnownAuthors
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.Badge
@@ -50,6 +58,12 @@ import ru.moistranicy.app.data.ShelfRepository
 
 val NoInsets = WindowInsets(0, 0, 0, 0)
 
+/** Счётчики «сбросов» вкладок: экраны прокручиваются к началу, когда значение меняется. */
+object TabReset {
+    val nonces = mutableStateMapOf<String, Int>()
+    fun bump(route: String) { nonces[route] = (nonces[route] ?: 0) + 1 }
+}
+
 class MainActivity : ComponentActivity() {
     /** Вкладка, которую нужно открыть (например, из уведомления). */
     private val openRequest = mutableStateOf<String?>(null)
@@ -59,15 +73,30 @@ class MainActivity : ComponentActivity() {
         AppPrefs.init(applicationContext)
         ShelfRepository.init(applicationContext)
         CycleRepository.init(applicationContext)
+        AuthorStats.init(applicationContext)
+        KnownAuthors.init(applicationContext)
         Notifier.ensureChannel(applicationContext)
         CycleCheckWorker.schedule(applicationContext)
         openRequest.value = intent?.getStringExtra(Notifier.EXTRA_OPEN)
         enableEdgeToEdge()
         setContent {
             AppTheme {
+                val dark = isAppDark()
+                DisposableEffect(dark) {
+                    enableEdgeToEdge(
+                        statusBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT) { dark },
+                        navigationBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT) { dark },
+                    )
+                    onDispose {}
+                }
                 AppRoot(openRequest.value) { openRequest.value = null }
             }
         }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        KnownAuthors.flush()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -81,6 +110,7 @@ private data class Tab(val route: String, val label: String, val icon: ImageVect
 private val tabs = listOf(
     Tab("shelf", "Полка", Icons.Filled.Home),
     Tab("authors", "Авторы", Icons.Filled.Face),
+    Tab("recs", "Рекомендации", Icons.Filled.ThumbUp),
     Tab("search", "Поиск", Icons.Filled.Search),
     Tab("profile", "Профиль", Icons.Filled.Person),
 )
@@ -97,7 +127,7 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
     var currentTab by remember { mutableStateOf("shelf") }
     LaunchedEffect(route) {
         val r = route
-        if (r == "shelf" || r == "authors" || r == "search" || r == "profile") currentTab = r
+        if (r != null && tabs.any { it.route == r }) currentTab = r
     }
     val cycles by CycleRepository.cycles.collectAsState()
     val newCount = cycles.values.sumOf { it.newIds.size }
@@ -135,10 +165,14 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
                     NavigationBarItem(
                         selected = route == t.route,
                         onClick = {
-                            if (t.route == "search" && currentTab == "search") {
-                                // повторное нажатие: сбросить поиск и открыть его заново
-                                resetSearch()
-                                nav.navigate("search") {
+                            if (currentTab == t.route) {
+                                // повторное нажатие: сбросить вкладку к начальной странице
+                                when (t.route) {
+                                    "search" -> resetSearch()
+                                    "shelf" -> ShelfUi.reset()
+                                }
+                                TabReset.bump(t.route)
+                                nav.navigate(t.route) {
                                     popUpTo(nav.graph.findStartDestination().id) { saveState = false }
                                     launchSingleTop = true
                                     restoreState = false
@@ -155,7 +189,7 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
                                 Icon(t.icon, contentDescription = null)
                             }
                         },
-                        label = { Text(t.label) },
+                        label = { Text(t.label, fontSize = 10.sp, maxLines = 1, softWrap = false) },
                     )
                 }
             }
@@ -163,7 +197,10 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
     ) { pad ->
         NavHost(nav, startDestination = "shelf", modifier = Modifier.padding(pad)) {
             composable("shelf") { ShelfScreen(onBook = { nav.openBook(it) }) }
-            composable("authors") { AuthorsCloudScreen(onAuthor = { nav.openAuthor(it) }) }
+            composable("authors") {
+                AuthorsCloudScreen(onAuthor = { nav.openAuthor(it) }, onBook = { nav.openBook(it) })
+            }
+            composable("recs") { RecommendationsScreen(onBook = { nav.openBook(it) }) }
             composable("search") {
                 SearchScreen(onBook = { nav.openBook(it) }, onAuthor = { nav.openAuthor(it) })
             }

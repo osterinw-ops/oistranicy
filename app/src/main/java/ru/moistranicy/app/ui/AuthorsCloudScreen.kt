@@ -19,12 +19,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,110 +39,236 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
+import ru.moistranicy.app.data.AuthorStats
+import ru.moistranicy.app.data.FantLab
 import ru.moistranicy.app.data.ReadStatus
+import ru.moistranicy.app.data.ShelfEntry
 import ru.moistranicy.app.data.ShelfRepository
 import kotlin.math.sqrt
 
-private data class CloudAuthor(val id: String?, val name: String, val count: Int)
+private data class CloudWord(val key: String, val label: String, val count: Int, val shade: Float?, val id: String?)
 
-// Цвета логотипа: от светло-лавандового (мало книг) до глубокого фиолетового (много)
-private val CloudLight = Color(0xFFB9B0FF)
-private val CloudMid = Violet          // #7B6CF6
-private val CloudDark = Color(0xFF2A1F7A)
+// Цвета логотипа: авторы — фиолетовая гамма, теги — коралловая (закладка)
+private val VioletLight = Color(0xFFB9B0FF)
+private val VioletDark = Color(0xFF2A1F7A)
+private val CoralLight = Color(0xFFFFC2B2)
+private val CoralDark = Color(0xFFB8401F)
 private val CloudBg = Color(0xFFF5F3FF)
+private val TagBg = Color(0xFFFFF4F0)
 
-/**
- * Облако авторов прочитанных книг: размер и насыщенность имени
- * растут с числом прочитанных книг автора.
- */
+/** Жанры прочитанных книг, у которых их ещё нет, догружаем с FantLab (по одной за раз). */
+private val genreTried = HashSet<String>()
+
+private suspend fun enrichGenres(read: List<ShelfEntry>) {
+    for (e in read) {
+        val b = e.book
+        if (b.genres.isNotEmpty() || !b.id.startsWith("fl-")) continue
+        if (!genreTried.add(b.id)) continue
+        val d = runCatching { FantLab.work(b.id) }.getOrNull() ?: continue
+        if (d.book.genres.isNotEmpty()) ShelfRepository.refreshBook(e.book.copy(genres = d.book.genres))
+        delay(150)
+    }
+}
+
+/** Раскладка облака: крупные слова чередуются с мелкими, пары — от центра к краям. */
+private fun <T> cloudOrder(sortedDesc: List<T>): List<T> {
+    val zigzag = ArrayList<T>()
+    var lo = 0
+    var hi = sortedDesc.size - 1
+    var big = true
+    while (lo <= hi) {
+        zigzag += if (big) sortedDesc[lo++] else sortedDesc[hi--]
+        big = !big
+    }
+    val out = ArrayDeque<T>()
+    zigzag.forEachIndexed { k, a -> if ((k / 2) % 2 == 0) out.addLast(a) else out.addFirst(a) }
+    return out.toList()
+}
+
 @Composable
-fun AuthorsCloudScreen(onAuthor: (String) -> Unit) {
+fun AuthorsCloudScreen(onAuthor: (String) -> Unit, onBook: (String) -> Unit) {
     val shelf by ShelfRepository.entries.collectAsState()
+    val totals by AuthorStats.totals.collectAsState()
     val read = shelf.values.filter { it.status == ReadStatus.READ }
+    var tagSheet by remember { mutableStateOf<String?>(null) }
 
-    // группируем по имени; id берём первый известный FantLab-id
+    // ---- авторы: размер — сколько прочитал я, цвет — сколько написал автор ----
     val authors = read.flatMap { e -> e.book.authors.map { it to e.book.id } }
         .groupBy { it.first.name.trim() }
         .filterKeys { it.isNotEmpty() }
         .map { (name, list) ->
-            CloudAuthor(
-                id = list.firstNotNullOfOrNull { it.first.id?.takeIf { id -> id.startsWith("fl-") } },
-                name = name,
-                count = list.map { it.second }.distinct().size,
-            )
+            val id = list.firstNotNullOfOrNull { it.first.id?.takeIf { x -> x.startsWith("fl-") } }
+            Triple(name, id, list.map { it.second }.distinct().size)
         }
+    val known = authors.mapNotNull { (_, id, _) -> id?.let { totals[it] } }
+    val tMin = known.minOrNull() ?: 0
+    val tMax = known.maxOrNull() ?: 0
+    val authorWords = authors.map { (name, id, count) ->
+        val total = id?.let { totals[it] }
+        val shade = total?.let { if (tMax == tMin) 0.6f else sqrt((it - tMin).toFloat() / (tMax - tMin)) }
+        CloudWord(name, name, count, shade, id)
+    }
+
+    // ---- теги: жанры прочитанных книг ----
+    val tagWords = read.flatMap { e -> e.book.genres.map { it.trim().lowercase() to e.book.id } }
+        .filter { it.first.isNotEmpty() }
+        .groupBy { it.first }
+        .map { (tag, list) -> CloudWord(tag, tag, list.map { it.second }.distinct().size, null, null) }
+
+    LaunchedEffect(read.size) {
+        AuthorStats.ensure(authors.mapNotNull { it.second })
+        enrichGenres(read)
+    }
+
+    val resetNonce = TabReset.nonces["authors"] ?: 0
+    val authorsScroll = rememberScrollState()
+    val tagsScroll = rememberScrollState()
+    LaunchedEffect(resetNonce) {
+        authorsScroll.scrollTo(0)
+        tagsScroll.scrollTo(0)
+    }
 
     Scaffold(contentWindowInsets = NoInsets, topBar = { TopAppBar(title = { Text("Авторы") }) }) { pad ->
         if (authors.isEmpty()) {
             Box(Modifier.padding(pad)) {
-                CenterMessage("Здесь появятся авторы прочитанных книг.\nОтметьте книгу как «Прочитал».")
+                CenterMessage("Здесь появятся авторы и жанры прочитанных книг.\nОтметьте книгу как «Прочитал».")
             }
             return@Scaffold
         }
-        val min = authors.minOf { it.count }
-        val max = authors.maxOf { it.count }
-
-        // крупные имена чередуем с мелкими, пары раскладываем от центра к краям —
-        // получается облако, а не столбик
-        val sorted = authors.sortedWith(compareByDescending<CloudAuthor> { it.count }.thenBy { it.name })
-        val zigzag = ArrayList<CloudAuthor>()
-        var lo = 0
-        var hi = sorted.size - 1
-        var takeBig = true
-        while (lo <= hi) {
-            zigzag += if (takeBig) sorted[lo++] else sorted[hi--]
-            takeBig = !takeBig
-        }
-        val cloud = ArrayDeque<CloudAuthor>()
-        zigzag.forEachIndexed { k, a -> if ((k / 2) % 2 == 0) cloud.addLast(a) else cloud.addFirst(a) }
-
-        Column(
-            Modifier
-                .padding(pad)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-        ) {
+        Column(Modifier.padding(pad).fillMaxSize().padding(horizontal = 12.dp)) {
             Text(
                 "Прочитано книг: ${read.size} · авторов: ${authors.size}",
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
             )
-            Spacer(Modifier.height(12.dp))
-            FlowRow(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(CloudBg)
-                    .padding(horizontal = 14.dp, vertical = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
-                verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically),
-            ) {
-                cloud.forEach { a ->
-                    val t = if (max == min) 1f else sqrt((a.count - min).toFloat() / (max - min))
-                    val color = if (t < 0.5f) lerp(CloudLight, CloudMid, t * 2) else lerp(CloudMid, CloudDark, (t - 0.5f) * 2)
-                    val id = a.id
+            // 2/3 — облако авторов
+            Cloud(
+                words = authorWords,
+                bg = CloudBg,
+                light = VioletLight,
+                mid = Violet,
+                dark = VioletDark,
+                minSp = 13f,
+                maxSp = 32f,
+                scroll = authorsScroll,
+                modifier = Modifier.weight(2f),
+            ) { w -> w.id?.let(onAuthor) }
+            Spacer(Modifier.height(8.dp))
+            // 1/3 — облако тегов
+            if (tagWords.isEmpty()) {
+                Box(
+                    Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(TagBg),
+                    contentAlignment = Alignment.Center,
+                ) {
                     Text(
-                        a.name,
-                        fontSize = (13 + 19 * t).sp,
-                        lineHeight = (17 + 21 * t).sp,
-                        fontWeight = if (t > 0.66f) FontWeight.Bold else if (t > 0.33f) FontWeight.SemiBold else FontWeight.Normal,
+                        "Жанры загружаются…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = CoralDark.copy(alpha = 0.6f),
+                    )
+                }
+            } else {
+                Cloud(
+                    words = tagWords,
+                    bg = TagBg,
+                    light = CoralLight,
+                    mid = Coral,
+                    dark = CoralDark,
+                    minSp = 12f,
+                    maxSp = 26f,
+                    scroll = tagsScroll,
+                    modifier = Modifier.weight(1f),
+                ) { w -> tagSheet = w.key }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+
+    val tag = tagSheet
+    if (tag != null) {
+        val books = read.filter { e -> e.book.genres.any { it.trim().lowercase() == tag } }
+            .sortedByDescending { it.finishedAt ?: 0 }
+        ModalBottomSheet(onDismissRequest = { tagSheet = null }) {
+            Column(Modifier.padding(bottom = 24.dp)) {
+                Text(
+                    tag.replaceFirstChar { it.uppercase() },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                Text(
+                    "Прочитано книг: ${books.size}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 16.dp, bottom = 6.dp),
+                )
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    books.forEach { e ->
+                        CompactBookLine(null, e.book.title, e.book.authorsLine) {
+                            tagSheet = null
+                            onBook(e.book.id)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Облако слов. Размер — по count, цвет — по shade (если задан) или по count.
+ */
+@Composable
+private fun Cloud(
+    words: List<CloudWord>,
+    bg: Color,
+    light: Color,
+    mid: Color,
+    dark: Color,
+    minSp: Float,
+    maxSp: Float,
+    scroll: androidx.compose.foundation.ScrollState,
+    modifier: Modifier = Modifier,
+    onClick: (CloudWord) -> Unit,
+) {
+    val cMin = words.minOfOrNull { it.count } ?: 0
+    val cMax = words.maxOfOrNull { it.count } ?: 0
+    val ordered = cloudOrder(words.sortedWith(compareByDescending<CloudWord> { it.count }.thenBy { it.label }))
+    Box(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(bg),
+    ) {
+        Column(
+            Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 12.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.Center,
+        ) {
+            FlowRow(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+                verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
+            ) {
+                ordered.forEach { w ->
+                    val size = if (cMax == cMin) 0.6f else sqrt((w.count - cMin).toFloat() / (cMax - cMin))
+                    val shade = w.shade ?: size
+                    val color = if (shade < 0.5f) lerp(light, mid, shade * 2) else lerp(mid, dark, (shade - 0.5f) * 2)
+                    Text(
+                        w.label,
+                        fontSize = (minSp + (maxSp - minSp) * size).sp,
+                        lineHeight = (minSp + 4 + (maxSp - minSp) * size * 1.1f).sp,
+                        fontWeight = if (size > 0.66f) FontWeight.Bold else if (size > 0.33f) FontWeight.SemiBold else FontWeight.Normal,
                         color = color,
                         textAlign = TextAlign.Center,
                         modifier = Modifier
                             .align(Alignment.CenterVertically)
                             .clip(RoundedCornerShape(6.dp))
-                            .clickable(enabled = id != null) { id?.let(onAuthor) }
+                            .clickable { onClick(w) }
                             .padding(horizontal = 2.dp),
                     )
                 }
             }
-            Spacer(Modifier.height(10.dp))
-            Text(
-                "Чем крупнее и темнее имя — тем больше книг автора вы прочитали. Нажмите на имя, чтобы открыть автора.",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }

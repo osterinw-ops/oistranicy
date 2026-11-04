@@ -72,6 +72,10 @@ data class TrackedCycle(
     val newIds: Set<String>,
     val followedAt: Long,
     val checkedAt: Long,
+    /** Жанры FantLab (цикла или его первых книг) — для тематической иконки. */
+    val genres: List<String> = emptyList(),
+    /** Пользователь бросил цикл целиком: не предлагаем и не уведомляем. */
+    val dropped: Boolean = false,
 )
 
 private val MINOR_TYPES = setOf(
@@ -79,7 +83,7 @@ private val MINOR_TYPES = setOf(
     "интервью", "рецензия", "предисловие", "послесловие", "пьеса-шутка",
 )
 
-private fun isMinor(type: String?): Boolean {
+fun isMinor(type: String?): Boolean {
     val t = type?.lowercase() ?: return false
     return t.contains("рассказ") || t in MINOR_TYPES
 }
@@ -110,6 +114,8 @@ data class AuthorDetails(
     val imageUrl: String?,
     val years: String,
     val sections: List<AuthorSection>,
+    /** Имя в родительном падеже: «книги Вадима Панова». */
+    val nameGenitive: String = name,
 )
 
 data class AuthorHit(val id: String, val name: String, val subtitle: String)
@@ -132,3 +138,6 @@ object BookCache {
     }
     @Synchronized fun get(id: String): Book? = map[id]
 }
+
+/** Рекомендованная книга и почему она предложена. */
+data class Recommendation(val book: Book, val reason: String, val score: Double)

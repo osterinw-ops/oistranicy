@@ -43,6 +43,10 @@ object CycleRepository {
             newIds = old?.newIds ?: emptySet(),
             followedAt = old?.followedAt ?: now,
             checkedAt = now,
+            genres = details.book.genres.ifEmpty {
+                old?.genres?.ifEmpty { null } ?: firstBooksGenres(details)
+            },
+            dropped = old?.dropped ?: false,
         )
         save(_cycles.value + (cycle.id to cycle))
     }
@@ -56,6 +60,37 @@ object CycleRepository {
     }
 
     fun unfollow(id: String) = save(_cycles.value - id)
+
+    /** Бросить цикл: все непрочитанные вышедшие книги — в «Бросил», цикл больше не предлагаем. */
+    fun dropCycle(id: String) {
+        val c = _cycles.value[id] ?: return
+        val shelf = ShelfRepository.entries.value
+        c.books.filter { it.published }.forEach { b ->
+            val st = shelf[b.id]?.status
+            if (st != ReadStatus.READ && st != ReadStatus.DROPPED) {
+                ShelfRepository.setStatus(bookOf(c, b), ReadStatus.DROPPED)
+            }
+        }
+        save(_cycles.value + (id to c.copy(dropped = true, newIds = emptySet())))
+    }
+
+    /** Вернуться к брошенному циклу: книги со статусом «Бросил» снимаются с полки. */
+    fun undropCycle(id: String) {
+        val c = _cycles.value[id] ?: return
+        val shelf = ShelfRepository.entries.value
+        c.books.forEach { b -> if (shelf[b.id]?.status == ReadStatus.DROPPED) ShelfRepository.remove(b.id) }
+        save(_cycles.value + (id to c.copy(dropped = false)))
+    }
+
+    private fun firstBooksGenres(d: WorkDetails): List<String> =
+        cycleBooks(d.children).take(3).flatMap { BookCache.get(it.book.id)?.genres.orEmpty() }.distinct().take(6)
+
+    /** Запомнить жанры цикла (когда их удалось узнать по первым книгам). */
+    private fun updateGenres(cycleId: String, genres: List<String>) {
+        val c = _cycles.value[cycleId] ?: return
+        if (genres.isEmpty() || c.genres.isNotEmpty()) return
+        save(_cycles.value + (cycleId to c.copy(genres = genres.distinct().take(6))))
+    }
 
     fun markSeen(id: String) {
         val c = _cycles.value[id] ?: return
@@ -88,6 +123,7 @@ object CycleRepository {
             books = freshWithCovers,
             newIds = old.newIds + news.map { it.id },
             checkedAt = System.currentTimeMillis(),
+            genres = details.book.genres.ifEmpty { old.genres },
         )
         save(_cycles.value + (old.id to updated))
         return news.map { CycleNews(old.id, updated.name, it) }
@@ -96,7 +132,7 @@ object CycleRepository {
     /** Проверить все отслеживаемые циклы. Ошибки по отдельным циклам пропускаются. */
     suspend fun checkAll(): List<CycleNews> {
         val result = mutableListOf<CycleNews>()
-        for (id in _cycles.value.keys.toList()) {
+        for (id in _cycles.value.filterValues { !it.dropped }.keys.toList()) {
             runCatching { FantLab.work(id) }.getOrNull()?.let { result += applyUpdate(it) }
         }
         return result
@@ -122,19 +158,26 @@ object CycleRepository {
     }
 
     private val coverJobs = HashSet<String>()
+    private val metaTried = HashSet<String>()
 
     /** Догрузить обложки первых трёх книг цикла с FantLab (один раз). */
     suspend fun ensureCovers(cycleId: String) {
         val c = get(cycleId) ?: return
-        val need = c.books.filter { it.published }.take(3).filter { it.coverUrl == null }
+        val first = c.books.filter { it.published }.take(3)
+        val need = first.filter { it.coverUrl == null || c.genres.isEmpty() }
         if (need.isEmpty()) return
-        synchronized(coverJobs) { if (!coverJobs.add(cycleId)) return }
+        synchronized(coverJobs) {
+            if (!metaTried.add(cycleId)) return   // в этой сессии уже пробовали
+            if (!coverJobs.add(cycleId)) return
+        }
         try {
+            val genres = mutableListOf<String>()
             for (b in need) {
-                val url = runCatching { FantLab.work(b.id).book.coverUrl }.getOrNull()
-                    ?: BookCache.get(b.id)?.coverUrl
-                updateCover(b.id, url)
+                val book = runCatching { FantLab.work(b.id).book }.getOrNull() ?: BookCache.get(b.id)
+                updateCover(b.id, book?.coverUrl)
+                genres += book?.genres.orEmpty()
             }
+            updateGenres(cycleId, genres)
         } finally {
             synchronized(coverJobs) { coverJobs.remove(cycleId) }
         }
@@ -191,6 +234,8 @@ object CycleRepository {
         put("newIds", JSONArray(c.newIds.toList()))
         put("followedAt", c.followedAt)
         put("checkedAt", c.checkedAt)
+        put("genres", JSONArray(c.genres))
+        put("dropped", c.dropped)
     }
 
     private fun fromJson(o: JSONObject): TrackedCycle {
@@ -219,6 +264,8 @@ object CycleRepository {
             newIds = (0 until newIds.length()).map { newIds.getString(it) }.toSet(),
             followedAt = o.optLong("followedAt"),
             checkedAt = o.optLong("checkedAt"),
+            genres = o.optJSONArray("genres")?.let { g -> (0 until g.length()).map { g.getString(it) } }.orEmpty(),
+            dropped = o.optBoolean("dropped", false),
         )
     }
 }

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -56,6 +57,12 @@ object ShelfUi {
     var tab by mutableIntStateOf(0)
     /** Раскрытые циклы (по умолчанию все свёрнуты). */
     val expanded = mutableStateMapOf<String, Boolean>()
+
+    /** Повторное нажатие на «Полку»: вкладка «Читаю», всё свёрнуто. */
+    fun reset() {
+        tab = 0
+        expanded.clear()
+    }
 }
 
 private data class Line(
@@ -81,6 +88,8 @@ private data class Group(
     val unread: Int? = null,
     val total: Int? = null,
     val tracked: Boolean = false,
+    val genres: List<String> = emptyList(),
+    val dropped: Boolean = false,
 )
 
 /**
@@ -99,7 +108,8 @@ private fun buildGroups(
         val read = published.count { shelf[it.id]?.status == ReadStatus.READ }
         val lines = c.books.withIndex().filter { (_, b) ->
             val st = shelf[b.id]?.status
-            if (status == ReadStatus.WANT) st == ReadStatus.WANT || st == null else st == status
+            // брошенный цикл больше не предлагаем: в «Хочу» — только явно отмеченные
+            if (status == ReadStatus.WANT && !c.dropped) st == ReadStatus.WANT || st == null else st == status
         }.map { (i, b) ->
             used += b.id
             Line(b.id, i + 1, b.title, b.year?.let { if (b.published) it else "$it, ожидается" }
@@ -112,6 +122,7 @@ private fun buildGroups(
                 covers = CycleRepository.collageCovers(c),
                 author = c.authors.joinToString(", ") { it.name }.ifEmpty { null },
                 unread = published.size - read, total = published.size, tracked = true,
+                genres = c.genres, dropped = c.dropped,
             )
         }
     }
@@ -133,6 +144,7 @@ private fun buildGroups(
             isSeries = true,
             covers = list.mapNotNull { it.book.coverUrl }.take(3),
             author = b0.authorsLine.ifEmpty { null },
+            genres = list.flatMap { it.book.genres }.distinct(),
         )
     }.sortedBy { it.title }
     val singles = rest.filter { it.book.seriesName == null }
@@ -159,6 +171,10 @@ fun ShelfScreen(onBook: (String) -> Unit) {
 
     // метки «новая» видны во время визита, при уходе с полки считаются просмотренными
     DisposableEffect(Unit) { onDispose { CycleRepository.markAllSeen() } }
+
+    val listState = rememberLazyListState()
+    val resetNonce = TabReset.nonces["shelf"] ?: 0
+    LaunchedEffect(resetNonce, ShelfUi.tab) { runCatching { listState.scrollToItem(0) } }
 
     val statuses = ReadStatus.entries
     val groupsByStatus = statuses.associateWith { buildGroups(it, shelf, cycles) }
@@ -210,7 +226,7 @@ fun ShelfScreen(onBook: (String) -> Unit) {
                     },
                 )
             } else {
-                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
+                LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 16.dp)) {
                     checkResult?.let { msg ->
                         item {
                             Text(
@@ -270,8 +286,8 @@ private fun SeriesHeader(g: Group, open: Boolean, onToggle: () -> Unit, onBook: 
             .padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SeriesCollage(
-            g.covers,
+        SeriesIcon(
+            g.genres,
             g.title.orEmpty(),
             Modifier.then(if (cid != null) Modifier.clickable { onBook(cid) } else Modifier),
         )
@@ -295,6 +311,7 @@ private fun SeriesHeader(g: Group, open: Boolean, onToggle: () -> Unit, onBook: 
             }
             val unread = g.unread
             val info = when {
+                g.dropped -> "цикл брошен · не прочитано: ${unread ?: 0}"
                 unread == null -> "книг на полке: ${g.lines.size}"
                 unread == 0 -> "всё прочитано"
                 else -> "не прочитано: $unread из ${g.total}"
