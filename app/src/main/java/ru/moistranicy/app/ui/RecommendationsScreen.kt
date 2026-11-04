@@ -43,7 +43,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import ru.moistranicy.app.data.RecBlock
 import ru.moistranicy.app.data.Recommendation
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.material3.TextButton
 import ru.moistranicy.app.data.Recommender
 import ru.moistranicy.app.data.ShelfRepository
 import java.util.Locale
@@ -92,7 +95,13 @@ fun RecommendationsScreen(onBook: (String) -> Unit) {
     // уже добавленное на полку не показываем
     val shelf by ShelfRepository.entries.collectAsState()
     val shelfIds = shelf.keys
-    val all = RecsState.items.orEmpty().filter { it.book.id !in shelfIds }
+    // скрытые книги и авторы исчезают сразу, без пересчёта
+    val blockedBooks by RecBlock.books.collectAsState()
+    val blockedAuthors by RecBlock.authors.collectAsState()
+    val all = RecsState.items.orEmpty().filter {
+        it.book.id !in shelfIds && it.book.id !in blockedBooks && !RecBlock.isBlocked(it.book)
+    }
+    blockedAuthors.size // подписка на изменения списка авторов
     val pages = (all.size + PER_PAGE - 1) / PER_PAGE
     val page = RecsState.page.coerceIn(0, (pages - 1).coerceAtLeast(0))
     val shown = all.drop(page * PER_PAGE).take(PER_PAGE)
@@ -189,6 +198,25 @@ private fun RecCard(r: Recommendation, onClick: () -> Unit) {
                     overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
                 )
+            }
+            Row(Modifier.padding(top = 2.dp)) {
+                TextButton(
+                    onClick = { RecBlock.blockBook(b.id) },
+                    contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+                ) {
+                    Text("✕ Не рекомендовать книгу", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Spacer(Modifier.width(12.dp))
+                if (b.authors.isNotEmpty()) {
+                    TextButton(
+                        onClick = { RecBlock.blockAuthors(b.authors) },
+                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+                    ) {
+                        Text("✕ Не рекомендовать автора", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
             }
         }
     }

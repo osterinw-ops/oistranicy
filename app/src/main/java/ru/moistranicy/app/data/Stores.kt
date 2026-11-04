@@ -104,3 +104,62 @@ object KnownAuthors {
         storeIo.execute { runCatching { file.writeText(json) } }
     }
 }
+
+/**
+ * «Не рекомендовать»: книги скрываются навсегда, авторы — на полгода.
+ * Хранится в rec_block.json.
+ */
+object RecBlock {
+    private const val HALF_YEAR_MS = 182L * 24 * 60 * 60 * 1000
+    private lateinit var file: File
+    private val _books = MutableStateFlow<Set<String>>(emptySet())
+    private val _authors = MutableStateFlow<Map<String, Long>>(emptyMap()) // ключ автора -> до какого времени
+    val books: StateFlow<Set<String>> = _books
+    val authors: StateFlow<Map<String, Long>> = _authors
+
+    @Synchronized
+    fun init(context: Context) {
+        if (::file.isInitialized) return
+        file = File(context.filesDir, "rec_block.json")
+        runCatching {
+            if (file.exists()) {
+                val o = JSONObject(file.readText())
+                val b = o.optJSONArray("books") ?: JSONArray()
+                _books.value = (0 until b.length()).map { b.getString(it) }.toSet()
+                val a = o.optJSONObject("authors") ?: JSONObject()
+                val now = System.currentTimeMillis()
+                _authors.value = a.keys().asSequence().associateWith { a.getLong(it) }.filterValues { it > now }
+            }
+        }
+    }
+
+    /** Ключ автора: FantLab-id, а если его нет — имя. */
+    fun authorKey(p: Person): String = p.id?.takeIf { it.startsWith("fl-") } ?: ("name:" + p.name.trim().lowercase())
+
+    fun isBlocked(book: Book): Boolean {
+        if (book.id in _books.value) return true
+        val now = System.currentTimeMillis()
+        return book.authors.any { (_authors.value[authorKey(it)] ?: 0L) > now }
+    }
+
+    fun blockBook(id: String) {
+        _books.value = _books.value + id
+        save()
+    }
+
+    fun blockAuthors(people: List<Person>) {
+        val until = System.currentTimeMillis() + HALF_YEAR_MS
+        _authors.value = _authors.value + people.associate { authorKey(it) to until }
+        save()
+    }
+
+    @Synchronized
+    private fun save() {
+        if (!::file.isInitialized) return
+        val json = JSONObject().apply {
+            put("books", JSONArray(_books.value.toList()))
+            put("authors", JSONObject().apply { _authors.value.forEach { (k, v) -> put(k, v) } })
+        }.toString()
+        storeIo.execute { runCatching { file.writeText(json) } }
+    }
+}

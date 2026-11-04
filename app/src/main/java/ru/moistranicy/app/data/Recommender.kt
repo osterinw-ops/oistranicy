@@ -21,6 +21,7 @@ object Recommender {
         fun offer(r: Recommendation) {
             val b = r.book
             if (b.id in onShelf || b.isCycle || !b.published) return
+            if (RecBlock.isBlocked(b)) return
             if (isMinor(b.workType)) return
             val old = out[b.id]
             if (old == null || old.score < r.score) out[b.id] = r
