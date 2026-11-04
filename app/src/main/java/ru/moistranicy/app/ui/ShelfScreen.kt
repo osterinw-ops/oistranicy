@@ -187,12 +187,14 @@ fun ShelfScreen(onBook: (String) -> Unit) {
     val groupsByStatus = statuses.associateWith { buildGroups(it, shelf, cycles) }
     val current = statuses[ShelfUi.tab.coerceIn(0, statuses.size - 1)]
     val groups = groupsByStatus.getValue(current)
+    // «Читаю» — отдельными книгами, без группировки по циклам
+    val reading = shelf.values.filter { it.status == ReadStatus.READING }.sortedByDescending { it.updatedAt }
 
     Scaffold(
         contentWindowInsets = NoInsets,
         topBar = {
-            TopAppBar(
-                title = { Text("Моя полка") },
+            AppTopBar(
+                "Моя полка",
                 actions = {
                     if (checking) {
                         CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -214,7 +216,8 @@ fun ShelfScreen(onBook: (String) -> Unit) {
         Column(Modifier.padding(pad)) {
             ScrollableTabRow(selectedTabIndex = ShelfUi.tab, edgePadding = 12.dp) {
                 statuses.forEachIndexed { i, s ->
-                    val count = groupsByStatus.getValue(s).sumOf { it.lines.size }
+                    val count = if (s == ReadStatus.READING) reading.size
+                    else groupsByStatus.getValue(s).sumOf { it.lines.size }
                     Tab(
                         selected = ShelfUi.tab == i,
                         onClick = { ShelfUi.tab = i },
@@ -222,7 +225,11 @@ fun ShelfScreen(onBook: (String) -> Unit) {
                     )
                 }
             }
-            if (groups.isEmpty()) {
+            if (current == ReadStatus.READING && reading.isNotEmpty()) {
+                LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(vertical = 6.dp)) {
+                    items(reading, key = { it.book.id }) { e -> ReadingRow(e, cycles) { onBook(e.book.id) } }
+                }
+            } else if (groups.isEmpty() || current == ReadStatus.READING) {
                 CenterMessage(
                     when (current) {
                         ReadStatus.READING -> "Сейчас ничего не читаете.\nНайдите книгу во вкладке «Поиск»."
@@ -342,5 +349,55 @@ private fun SeriesHeader(g: Group, open: Boolean, onToggle: () -> Unit, onBook: 
             contentDescription = if (open) "Свернуть" else "Развернуть",
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+/** Книга во вкладке «Читаю»: обложка, название, затем цикл и автор. */
+@Composable
+private fun ReadingRow(e: ShelfEntry, cycles: Map<String, TrackedCycle>, onClick: () -> Unit) {
+    val b = e.book
+    // номер и название цикла: сначала из отслеживаемых циклов, иначе из данных книги
+    val tracked = cycles.values.firstOrNull { c -> c.books.any { it.id == b.id } }
+    val seriesLine = when {
+        tracked != null -> {
+            val n = tracked.books.indexOfFirst { it.id == b.id } + 1
+            "Цикл «${tracked.name}», книга $n из ${tracked.books.count { it.published }}"
+        }
+        b.seriesName != null -> "Цикл «${b.seriesName}»" + (b.seriesNumber?.let { ", книга $it" } ?: "")
+        else -> null
+    }
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        BookCover(b, Modifier.width(60.dp), corner = 6.dp)
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                b.title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (seriesLine != null) {
+                Text(
+                    seriesLine,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (b.authors.isNotEmpty()) {
+                Text(
+                    b.authorsLine,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
     }
 }

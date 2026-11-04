@@ -100,8 +100,8 @@ fun RecommendationsScreen(onBook: (String) -> Unit) {
     Scaffold(
         contentWindowInsets = NoInsets,
         topBar = {
-            TopAppBar(
-                title = { Text("Рекомендации") },
+            AppTopBar(
+                "Мои рекомендации",
                 actions = {
                     if (RecsState.loading) {
                         CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)

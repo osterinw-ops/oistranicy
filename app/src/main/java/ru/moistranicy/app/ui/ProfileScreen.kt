@@ -59,7 +59,7 @@ fun ProfileScreen(onBook: (String) -> Unit) {
         .groupingBy { it }.eachCount()
         .entries.sortedByDescending { it.value }.take(5)
 
-    Scaffold(contentWindowInsets = NoInsets, topBar = { TopAppBar(title = { Text("Профиль") }) }) { pad ->
+    Scaffold(contentWindowInsets = NoInsets, topBar = { AppTopBar("Мой профиль") }) { pad ->
         Column(
             Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),

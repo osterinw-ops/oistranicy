@@ -155,7 +155,7 @@ fun SearchScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit) {
         }
     }
 
-    Scaffold(contentWindowInsets = NoInsets, topBar = { TopAppBar(title = { Text("Поиск") }) }) { pad ->
+    Scaffold(contentWindowInsets = NoInsets, topBar = { AppTopBar("Мой поиск") }) { pad ->
         Column(Modifier.padding(pad)) {
             OutlinedTextField(
                 value = SearchHolder.query,

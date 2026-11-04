@@ -129,7 +129,7 @@ fun AuthorsCloudScreen(onAuthor: (String) -> Unit, onBook: (String) -> Unit) {
         tagsScroll.scrollTo(0)
     }
 
-    Scaffold(contentWindowInsets = NoInsets, topBar = { TopAppBar(title = { Text("Авторы") }) }) { pad ->
+    Scaffold(contentWindowInsets = NoInsets, topBar = { AppTopBar("Мои авторы") }) { pad ->
         if (authors.isEmpty()) {
             Box(Modifier.padding(pad)) {
                 CenterMessage("Здесь появятся авторы и жанры прочитанных книг.\nОтметьте книгу как «Прочитал».")
