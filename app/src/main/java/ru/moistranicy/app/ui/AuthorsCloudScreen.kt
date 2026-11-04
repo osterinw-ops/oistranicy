@@ -73,12 +73,20 @@ private suspend fun enrichGenres(read: List<ShelfEntry>) {
 
 private val TAG_STOP_WORDS = setOf("с", "и", "в", "во", "на", "о", "об", "для", "по", "из", "от", "до", "без", "про", "или", "а", "к", "со")
 
-/** Тег не длиннее двух слов: «фэнтези с элементами юмора» → «фэнтези». */
+private val ADJ_ENDINGS = listOf("ая", "яя", "ое", "ее", "ый", "ий", "ой", "ые", "ие", "ого", "его", "ую", "юю", "ых", "их")
+
+/**
+ * Если в теге больше двух значимых слов (без союзов и предлогов) — оставляем одно главное:
+ * берём часть до первого предлога и в ней последнее слово, которое не прилагательное.
+ * «Научная фантастика о путешествиях во времени» → «фантастика».
+ */
 private fun shortTag(tag: String): String {
-    val words = tag.trim().split(Regex("\\s+"))
-    if (words.size <= 2) return tag.trim()
-    val two = words.take(2)
-    return if (two[1] in TAG_STOP_WORDS) two[0] else two.joinToString(" ")
+    val t = tag.trim()
+    val words = t.split(Regex("\\s+"))
+    val significant = words.count { it !in TAG_STOP_WORDS }
+    if (significant <= 2) return t
+    val head = words.takeWhile { it !in TAG_STOP_WORDS }.ifEmpty { words.filter { it !in TAG_STOP_WORDS } }
+    return head.lastOrNull { w -> ADJ_ENDINGS.none { w.endsWith(it) } } ?: head.last()
 }
 
 /** Раскладка облака: крупные слова чередуются с мелкими, пары — от центра к краям. */
