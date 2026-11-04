@@ -104,7 +104,8 @@ fun AuthorsCloudScreen(onAuthor: (String) -> Unit, onBook: (String) -> Unit) {
     val known = authors.mapNotNull { (_, id, _) -> id?.let { totals[it] } }
     val tMin = known.minOrNull() ?: 0
     val tMax = known.maxOrNull() ?: 0
-    val authorWords = authors.map { (name, id, count) ->
+    // в облаке — только авторы, у которых прочитано 2 книги и больше
+    val authorWords = authors.filter { it.third >= 2 }.map { (name, id, count) ->
         val total = id?.let { totals[it] }
         val shade = total?.let { if (tMax == tMin) 0.6f else sqrt((it - tMin).toFloat() / (tMax - tMin)) }
         CloudWord(name, name, count, shade, id)
@@ -113,6 +114,8 @@ fun AuthorsCloudScreen(onAuthor: (String) -> Unit, onBook: (String) -> Unit) {
     // ---- теги: жанры прочитанных книг ----
     val tagWords = read.flatMap { e -> e.book.genres.map { it.trim().lowercase() to e.book.id } }
         .filter { it.first.isNotEmpty() }
+        // теги длиннее двух слов не показываем
+        .filter { it.first.split(Regex("\\s+")).size <= 2 }
         .groupBy { it.first }
         .map { (tag, list) -> CloudWord(tag, tag, list.map { it.second }.distinct().size, null, null) }
 
@@ -138,13 +141,25 @@ fun AuthorsCloudScreen(onAuthor: (String) -> Unit, onBook: (String) -> Unit) {
         }
         Column(Modifier.padding(pad).fillMaxSize().padding(horizontal = 12.dp)) {
             Text(
-                "Прочитано книг: ${read.size} · авторов: ${authors.size}",
+                "Прочитано книг: ${read.size} · авторов: ${authors.size} · в облаке: ${authorWords.size}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
             )
             // 2/3 — облако авторов
-            Cloud(
+            if (authorWords.isEmpty()) {
+                Box(
+                    Modifier.weight(2f).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(CloudBg),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "Здесь появятся авторы,\nу которых вы прочитали 2 книги и больше",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = VioletDark.copy(alpha = 0.6f),
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            } else Cloud(
                 words = authorWords,
                 bg = CloudBg,
                 light = VioletLight,
