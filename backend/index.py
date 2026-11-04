@@ -133,7 +133,7 @@ def current_user(headers):
     if not existing:
         q(
             """UPSERT INTO users (id, name, login, avatar, is_public, created, updated, read_count)
-               VALUES ($id, $name, $login, $avatar, true, $now, $now, 0)""",
+               VALUES ($id, $name, $login, $avatar, true, $now, $now, 0l)""",
             {"$id": uid, "$name": name, "$login": login, "$avatar": avatar, "$now": now_ms()},
         )
     else:
