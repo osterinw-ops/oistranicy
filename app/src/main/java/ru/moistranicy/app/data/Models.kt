@@ -32,6 +32,8 @@ data class Book(
     val workType: String? = null,
     val isCycle: Boolean = false,
     val communityRating: Float? = null,
+    /** false — книга анонсирована, но ещё не вышла. В JSON не сохраняется. */
+    val published: Boolean = true,
 ) {
     val authorsLine: String get() = authors.joinToString(", ") { it.name }
     val source: String get() = id.substringBefore('-', "")
@@ -48,7 +50,48 @@ data class ShelfEntry(
 )
 
 /** Книга внутри цикла: deep — уровень вложенности (1 — прямые части). */
-data class CycleItem(val book: Book, val deep: Int)
+data class CycleItem(val book: Book, val deep: Int, val published: Boolean = true)
+
+/** Книга отслеживаемого цикла (номер = позиция в списке + 1). */
+data class CycleBook(
+    val id: String,
+    val title: String,
+    val year: String?,
+    val type: String?,
+    val published: Boolean,
+)
+
+/** Цикл, за которым следит пользователь. newIds — книги, появившиеся с прошлого просмотра. */
+data class TrackedCycle(
+    val id: String,
+    val name: String,
+    val authors: List<Person>,
+    val coverUrl: String?,
+    val books: List<CycleBook>,
+    val newIds: Set<String>,
+    val followedAt: Long,
+    val checkedAt: Long,
+)
+
+private val MINOR_TYPES = setOf(
+    "статья", "эссе", "стихотворение", "стихотворения", "очерк", "отрывок",
+    "интервью", "рецензия", "предисловие", "послесловие", "пьеса-шутка",
+)
+
+private fun isMinor(type: String?): Boolean {
+    val t = type?.lowercase() ?: return false
+    return t.contains("рассказ") || t in MINOR_TYPES
+}
+
+/**
+ * Книги цикла по порядку: без вложенных подциклов-контейнеров и без мелких форм
+ * (рассказы, статьи). Если цикл целиком из рассказов — оставляем их.
+ */
+fun cycleBooks(children: List<CycleItem>): List<CycleItem> {
+    val leaves = children.filter { !it.book.isCycle }.distinctBy { it.book.id }
+    val major = leaves.filter { !isMinor(it.book.workType) }
+    return major.ifEmpty { leaves }
+}
 
 data class WorkDetails(
     val book: Book,
@@ -56,7 +99,8 @@ data class WorkDetails(
     val children: List<CycleItem>,
 )
 
-data class AuthorSection(val title: String, val books: List<Book>)
+/** Раздел библиографии. Для цикла cycleId задан, книги пронумерованы по порядку. */
+data class AuthorSection(val title: String, val books: List<Book>, val cycleId: String? = null)
 
 data class AuthorDetails(
     val id: String,

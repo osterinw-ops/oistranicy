@@ -142,9 +142,12 @@ object FantLab {
                 }
             }
         }
-        // ближайший цикл — последний в первой цепочке
+        // ближайший цикл: последний элемент первой цепочки с типом «цикл»
+        // (роман-эпопея внутри цикла слишком мелкая единица для отслеживания)
         val nearest = o.optJSONObject("parents")?.optJSONArray("cycles")?.optJSONArray(0)?.let { chain ->
-            chain.optJSONObject(chain.length() - 1)
+            val elems = (0 until chain.length()).mapNotNull { chain.optJSONObject(it) }
+            elems.lastOrNull { it.str("work_type_name") == "cycle" || it.str("work_type").equals("цикл", true) }
+                ?: elems.lastOrNull()
         }
 
         val authors = o.optJSONArray("authors")?.let { arr ->
@@ -178,7 +181,7 @@ object FantLab {
             (0 until arr.length()).mapNotNull { i ->
                 val c = arr.optJSONObject(i) ?: return@mapNotNull null
                 val b = blockItemToBook(c) ?: return@mapNotNull null
-                CycleItem(b, c.optInt("deep", 1).coerceAtLeast(1))
+                CycleItem(b, c.optInt("deep", 1).coerceAtLeast(1), b.published)
             }
         }.orEmpty()
 
@@ -189,7 +192,7 @@ object FantLab {
         val num = id.removePrefix("fl-")
         val o = JSONObject(Http.get("$API/autor/$num?biblio_blocks=1"))
         val sections = mutableListOf<AuthorSection>()
-        sections += blocks(o.opt("cycles_blocks"))
+        sections += cycleSections(o.opt("cycles_blocks"))
         sections += blocks(o.opt("works_blocks"))
         val years = listOf(o.str("birthday"), o.str("deathday"))
             .map { it.take(4) }.filter { it.length == 4 && it != "0000" }.joinToString("–")
@@ -201,6 +204,46 @@ object FantLab {
             years = years,
             sections = sections.filter { it.books.isNotEmpty() },
         )
+    }
+
+    private fun blockObjects(raw: Any?): List<JSONObject> {
+        val list = mutableListOf<Pair<Int, JSONObject>>()
+        when (raw) {
+            is JSONObject -> raw.keys().forEach { k -> raw.optJSONObject(k)?.let { list += (k.toIntOrNull() ?: 999) to it } }
+            is JSONArray -> for (i in 0 until raw.length()) raw.optJSONObject(i)?.let { list += it.optInt("id", i) to it }
+        }
+        return list.sortedBy { it.first }.map { it.second }
+    }
+
+    /** Каждый цикл автора — отдельный раздел с книгами по порядку. */
+    private fun cycleSections(raw: Any?): List<AuthorSection> {
+        val result = mutableListOf<AuthorSection>()
+        val seen = HashSet<String>()
+        for (block in blockObjects(raw)) {
+            val items = block.optJSONArray("list") ?: continue
+            for (i in 0 until items.length()) {
+                val cyc = items.optJSONObject(i) ?: continue
+                val cycleBook = blockItemToBook(cyc) ?: continue
+                if (!seen.add(cycleBook.id)) continue
+                val ch = cyc.optJSONArray("children")
+                val children = if (ch == null) emptyList() else (0 until ch.length()).mapNotNull { j ->
+                    val c = ch.optJSONObject(j) ?: return@mapNotNull null
+                    val b = blockItemToBook(c) ?: return@mapNotNull null
+                    CycleItem(b, c.optInt("deep", 1).coerceAtLeast(1), b.published)
+                }
+                val books = cycleBooks(children).map { it.book }
+                if (books.isEmpty()) {
+                    // цикл без раскрытого состава — показываем его как ссылку
+                    result += AuthorSection(cycleBook.title, listOf(cycleBook), null)
+                } else {
+                    result += AuthorSection(cycleBook.title, books, cycleBook.id)
+                }
+            }
+        }
+        // одиночные «циклы-ссылки» собираем в один раздел в конце
+        val (cycles, singles) = result.partition { it.cycleId != null }
+        return if (singles.isEmpty()) cycles
+        else cycles + AuthorSection("Другие циклы", singles.flatMap { it.books })
     }
 
     private fun blocks(raw: Any?): List<AuthorSection> {
@@ -243,9 +286,10 @@ object FantLab {
             workType = c.str("work_type").ifEmpty { null },
             isCycle = c.str("work_type_name") in CYCLE_TYPES,
             communityRating = c.floatOrNull("val_midmark_by_weight") ?: c.floatOrNull("rating"),
+            published = c.optInt("work_published", 1) == 1 && c.optInt("work_preparing", 0) == 0,
         )
         BookCache.put(book)
-        return BookCache.get(book.id) ?: book
+        return (BookCache.get(book.id) ?: book).copy(published = book.published)
     }
 
     private fun genres(o: JSONObject): List<String> {

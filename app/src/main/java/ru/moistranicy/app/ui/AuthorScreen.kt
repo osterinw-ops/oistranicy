@@ -13,7 +13,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.runtime.collectAsState
+import ru.moistranicy.app.data.Book
+import ru.moistranicy.app.data.CycleRepository
+import ru.moistranicy.app.data.ReadStatus
+import ru.moistranicy.app.data.ShelfRepository
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -92,6 +100,8 @@ fun AuthorScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit) {
 
 @Composable
 private fun AuthorContent(d: AuthorDetails, onBook: (String) -> Unit) {
+    val shelf by ShelfRepository.entries.collectAsState()
+    val tracked by CycleRepository.cycles.collectAsState()
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
         item {
             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -124,18 +134,66 @@ private fun AuthorContent(d: AuthorDetails, onBook: (String) -> Unit) {
             item { CenterMessage("Библиография пока недоступна") }
         }
         d.sections.forEach { s ->
+            val cid = s.cycleId
             item {
-                Text(
-                    s.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
-                )
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .then(if (cid != null) Modifier.clickable { onBook(cid) } else Modifier)
+                        .padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        s.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = if (cid != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (cid != null && tracked.containsKey(cid)) {
+                        Text("✓ слежу", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
             }
-            items(s.books) { b ->
-                BookRow(b) { onBook(b.id) }
-                RowDivider()
+            if (cid != null) {
+                itemsIndexed(s.books) { i, b ->
+                    NumberedBookRow(i + 1, b, shelf[b.id]?.status) { onBook(b.id) }
+                }
+            } else {
+                items(s.books) { b ->
+                    BookRow(b) { onBook(b.id) }
+                    RowDivider()
+                }
             }
+        }
+    }
+}
+
+/** Строка «1. Название (год)» — как в библиографии на сайтах. */
+@Composable
+private fun NumberedBookRow(n: Int, b: Book, status: ReadStatus?, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("$n.", modifier = Modifier.width(30.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            buildString {
+                append(b.title)
+                b.year?.let { append(" ($it)") }
+                if (!b.published) append(" — ожидается")
+            },
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyLarge,
+            color = when {
+                status == ReadStatus.READ -> MaterialTheme.colorScheme.onSurfaceVariant
+                !b.published -> MaterialTheme.colorScheme.onSurfaceVariant
+                else -> MaterialTheme.colorScheme.primary
+            },
+        )
+        if (status != null) {
+            Spacer(Modifier.width(8.dp))
+            StatusBadge(status)
         }
     }
 }

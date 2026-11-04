@@ -33,6 +33,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -50,7 +51,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.net.Uri
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Button
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalUriHandler
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
+import ru.moistranicy.app.data.Book
+import ru.moistranicy.app.data.CycleRepository
 import ru.moistranicy.app.data.BookCache
 import ru.moistranicy.app.data.FantLab
 import ru.moistranicy.app.data.ReadStatus
@@ -77,6 +87,8 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                 val d = FantLab.work(id)
                 WorkCache.map[id] = d
                 details = d
+                // открыт отслеживаемый цикл — заодно синхронизируем его состав
+                if (CycleRepository.isTracked(id)) CycleRepository.applyUpdate(d)
                 // обновляем книгу на полке свежими данными (обложка, аннотация, цикл)
                 ShelfRepository.get(id)?.let { ShelfRepository.refreshBook(d.book) }
             } catch (e: CancellationException) {
@@ -90,6 +102,30 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
     }
 
     val book = details?.book ?: BookCache.get(id) ?: entry?.book
+    val cycles by CycleRepository.cycles.collectAsState()
+    val scope = rememberCoroutineScope()
+    val uri = LocalUriHandler.current
+    var sheetCycleId by remember(id) { mutableStateOf<String?>(null) }
+    var followError by remember(id) { mutableStateOf<String?>(null) }
+
+    /** Ближайший цикл книги на FantLab (если есть). */
+    val cycleId = (details?.book?.seriesId ?: book?.seriesId)?.takeIf { it.startsWith("fl-") }
+
+    fun onStatus(b: Book, s: ReadStatus) {
+        ShelfRepository.setStatus(b, s)
+        val cid = cycleId ?: return
+        if (s != ReadStatus.READ && s != ReadStatus.READING) return
+        scope.launch {
+            try {
+                CycleRepository.ensureFollowed(cid)
+                if (s == ReadStatus.READ) sheetCycleId = cid
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                followError = "Не удалось загрузить цикл: ${e.message}"
+            }
+        }
+    }
 
     Scaffold(
         contentWindowInsets = NoInsets,
@@ -170,13 +206,33 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                 Text("Цикл: «${book.seriesName}»", color = MaterialTheme.colorScheme.primary)
             }
 
+            if (cycleId != null && cycles.containsKey(cycleId)) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "✓ Цикл «${cycles[cycleId]?.name}» в отслеживаемых",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable { sheetCycleId = cycleId },
+                )
+            }
+
+            val d = details
+            if (book.isCycle && d != null && d.children.isNotEmpty()) {
+                Spacer(Modifier.height(12.dp))
+                if (cycles.containsKey(id)) {
+                    OutlinedButton(onClick = { CycleRepository.unfollow(id) }) { Text("✓ Слежу за циклом") }
+                } else {
+                    Button(onClick = { CycleRepository.follow(d) }) { Text("Следить за циклом") }
+                }
+            }
+
             Spacer(Modifier.height(16.dp))
             Text("Статус", style = MaterialTheme.typography.titleSmall)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ReadStatus.entries.forEach { s ->
                     FilterChip(
                         selected = entry?.status == s,
-                        onClick = { ShelfRepository.setStatus(book, s) },
+                        onClick = { onStatus(book, s) },
                         label = { Text(s.title) },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = MaterialTheme.colorScheme.primary,
@@ -264,6 +320,16 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                 }
             }
 
+            Spacer(Modifier.height(16.dp))
+            TextButton(onClick = {
+                val q = (book.title + " " + (book.authors.firstOrNull()?.name ?: "")).trim()
+                uri.openUri("https://www.livelib.ru/find/books/" + Uri.encode(q))
+            }) { Text("Найти на LiveLib →") }
+
+            followError?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            }
+
             error?.let {
                 Spacer(Modifier.height(12.dp))
                 Text(
@@ -273,6 +339,48 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                 )
             }
             Spacer(Modifier.height(24.dp))
+        }
+    }
+
+    val sheetId = sheetCycleId
+    val sheetCycle = sheetId?.let { cycles[it] }
+    if (sheetCycle != null) {
+        ModalBottomSheet(onDismissRequest = { sheetCycleId = null }) {
+            val rest = sheetCycle.books.withIndex()
+                .filter { (_, b) -> b.id != id && shelf[b.id]?.status != ReadStatus.READ }
+            Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+                Text("Цикл «${sheetCycle.name}»", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                val total = sheetCycle.books.count { it.published }
+                val read = sheetCycle.books.count { it.published && shelf[it.id]?.status == ReadStatus.READ }
+                Text(
+                    "Прочитано $read из $total. Цикл добавлен во вкладку «Циклы» — " +
+                        "о новых книгах придёт уведомление.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                if (rest.isEmpty()) {
+                    Text("Вы прочитали весь цикл! 🎉", style = MaterialTheme.typography.titleMedium)
+                } else {
+                    Text("Что читать дальше", style = MaterialTheme.typography.titleSmall)
+                    val next = rest.firstOrNull { (_, b) -> b.published && shelf[b.id] == null }
+                    if (next != null) {
+                        Spacer(Modifier.height(6.dp))
+                        Button(onClick = {
+                            ShelfRepository.setStatus(CycleRepository.bookOf(sheetCycle, next.value), ReadStatus.WANT)
+                        }) { Text("«${next.value.title}» — хочу прочитать", maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Column(Modifier.verticalScroll(rememberScrollState())) {
+                        rest.forEach { (i, b) ->
+                            CycleBookRow(sheetCycle, i + 1, b, shelf[b.id], isNew = b.id in sheetCycle.newIds) {
+                                sheetCycleId = null
+                                onBook(it)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
