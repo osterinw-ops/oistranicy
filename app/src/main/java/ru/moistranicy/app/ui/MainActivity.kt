@@ -26,6 +26,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
@@ -79,6 +80,7 @@ private data class Tab(val route: String, val label: String, val icon: ImageVect
 
 private val tabs = listOf(
     Tab("shelf", "Полка", Icons.Filled.Home),
+    Tab("authors", "Авторы", Icons.Filled.Face),
     Tab("search", "Поиск", Icons.Filled.Search),
     Tab("profile", "Профиль", Icons.Filled.Person),
 )
@@ -95,7 +97,7 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
     var currentTab by remember { mutableStateOf("shelf") }
     LaunchedEffect(route) {
         val r = route
-        if (r == "shelf" || r == "search" || r == "profile") currentTab = r
+        if (r == "shelf" || r == "authors" || r == "search" || r == "profile") currentTab = r
     }
     val cycles by CycleRepository.cycles.collectAsState()
     val newCount = cycles.values.sumOf { it.newIds.size }
@@ -161,6 +163,7 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
     ) { pad ->
         NavHost(nav, startDestination = "shelf", modifier = Modifier.padding(pad)) {
             composable("shelf") { ShelfScreen(onBook = { nav.openBook(it) }) }
+            composable("authors") { AuthorsCloudScreen(onAuthor = { nav.openAuthor(it) }) }
             composable("search") {
                 SearchScreen(onBook = { nav.openBook(it) }, onAuthor = { nav.openAuthor(it) })
             }
