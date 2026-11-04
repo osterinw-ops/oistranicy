@@ -46,7 +46,7 @@ object Account {
         SyncManager.lastSyncAt = sp.getLong("lastSync", 0L)
     }
 
-    fun setToken(value: String) {
+    fun saveToken(value: String) {
         token = value
         sp.edit().putString("token", value).apply()
     }
@@ -220,7 +220,7 @@ object SyncManager {
 
     /** После входа: профиль пользователя и первая синхронизация. */
     suspend fun afterLogin(token: String): Boolean = withContext(Dispatchers.IO) {
-        Account.setToken(token)
+        Account.saveToken(token)
         runCatching { YandexApi.userInfo() }.getOrNull()?.let { u ->
             val avatarId = u.optString("default_avatar_id")
             val isEmpty = u.optBoolean("is_avatar_empty", avatarId.isEmpty())
