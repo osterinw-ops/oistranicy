@@ -28,6 +28,17 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import ru.moistranicy.app.R
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
+import ru.moistranicy.app.data.Account
 
 /** Логотип приложения: книга с закладкой на фиолетовом градиенте. */
 @Composable
@@ -46,6 +57,9 @@ fun LogoMark(size: Dp = 30.dp) {
         )
     }
 }
+
+/** Открыть профиль (аватар в шапке, как в Яндекс Музыке). */
+val LocalOpenProfile = staticCompositionLocalOf<(() -> Unit)?> { null }
 
 /**
  * Шапка вкладки в фирменном стиле: логотип и «Моя полка» —
@@ -74,6 +88,22 @@ fun AppTopBar(title: String, actions: @Composable RowScope.() -> Unit = {}) {
                 )
             }
         },
-        actions = actions,
+        actions = {
+            actions()
+            LocalOpenProfile.current?.let { open ->
+                IconButton(onClick = open) {
+                    Box(
+                        Modifier.size(32.dp).clip(CircleShape)
+                            .background(Brush.linearGradient(listOf(Violet, VioletDeep))),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(Icons.Filled.Person, "Мой профиль", tint = Color.White, modifier = Modifier.size(20.dp))
+                        Account.avatarUrl?.let {
+                            AsyncImage(model = it, contentDescription = "Мой профиль", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                        }
+                    }
+                }
+            }
+        },
     )
 }

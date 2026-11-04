@@ -72,8 +72,14 @@ object ShelfRepository {
         _entries.value = map
         val json = toJson(map.values).toString()
         io.execute { runCatching { file.writeText(json) } }
-        if (notify) SyncManager.onLocalChange()
+        if (notify) {
+            SyncManager.onLocalChange()
+            SocialSync.onShelfChange()
+        }
     }
+
+    /** Книги, убранные с полки после указанного времени. */
+    fun deletedSince(ts: Long): List<String> = synchronized(deleted) { deleted.filterValues { it > ts }.keys.toList() }
 
     private fun saveDeleted() {
         val json = synchronized(deleted) { JSONObject().apply { deleted.forEach { (k, v) -> put(k, v) } }.toString() }

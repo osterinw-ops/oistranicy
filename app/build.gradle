@@ -20,6 +20,9 @@ android {
         def yandexClientId = System.getenv("YANDEX_CLIENT_ID") ?: (project.findProperty("yandexClientId") ?: "")
         manifestPlaceholders = [YANDEX_CLIENT_ID: yandexClientId]
         buildConfigField "String", "YANDEX_CLIENT_ID", "\"${yandexClientId}\""
+        // адрес социального сервера (функция Яндекс Облака)
+        def socialApiUrl = System.getenv("SOCIAL_API_URL") ?: (project.findProperty("socialApiUrl") ?: "")
+        buildConfigField "String", "SOCIAL_API_URL", "\"${socialApiUrl}\""
     }
     signingConfigs {
         // постоянный отладочный ключ из репозитория: без него GitHub каждый раз

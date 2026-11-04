@@ -164,3 +164,56 @@ private fun LoggedIn() {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
+
+/** Соцпрофиль: открытость, подписчики, переход на свою страницу и к людям. */
+@Composable
+fun SocialCard(onUser: (String) -> Unit, onPeople: () -> Unit) {
+    if (!ru.moistranicy.app.data.SocialApi.configured || !Account.isLoggedIn) return
+    val scope = rememberCoroutineScope()
+    var me by remember { mutableStateOf<ru.moistranicy.app.data.SUser?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    androidx.compose.runtime.LaunchedEffect(Account.token) {
+        me = runCatching { ru.moistranicy.app.data.SocialApi.me() }.onFailure { error = it.message }.getOrNull()
+    }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(16.dp),
+    ) {
+        Text("Друзья", style = MaterialTheme.typography.titleMedium)
+        val m = me
+        if (m == null) {
+            Text(error ?: "Загрузка…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            Text(
+                "Подписчики: ${m.followers} · подписки: ${m.following}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Открытый профиль", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        if (m.isPublic) "Вас можно найти в поиске, полку видят все"
+                        else "Полку видят только подписчики, в поиске вас нет",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                androidx.compose.material3.Switch(
+                    checked = m.isPublic,
+                    onCheckedChange = { on ->
+                        me = m.copy(isPublic = on)
+                        scope.launch { runCatching { ru.moistranicy.app.data.SocialApi.setPublic(on) } }
+                    },
+                )
+            }
+            Row {
+                TextButton(onClick = { onUser(m.id) }) { Text("Моя страница") }
+                TextButton(onClick = onPeople) { Text("Найти людей") }
+            }
+        }
+    }
+}

@@ -45,7 +45,7 @@ import java.util.Calendar
 import java.util.Locale
 
 @Composable
-fun ProfileScreen(onBook: (String) -> Unit) {
+fun ProfileScreen(onBook: (String) -> Unit, onUser: (String) -> Unit = {}, onPeople: () -> Unit = {}) {
     val shelf by ShelfRepository.entries.collectAsState()
     val all = shelf.values
     val year = Calendar.getInstance().get(Calendar.YEAR)
@@ -65,6 +65,7 @@ fun ProfileScreen(onBook: (String) -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             AccountCard()
+            SocialCard(onUser = onUser, onPeople = onPeople)
 
             // Цель на год
             Card {

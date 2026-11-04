@@ -9,6 +9,8 @@ import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.SystemBarStyle
 import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.unit.sp
@@ -17,6 +19,7 @@ import ru.moistranicy.app.data.KnownAuthors
 import ru.moistranicy.app.data.RecBlock
 import ru.moistranicy.app.data.Account
 import ru.moistranicy.app.data.SyncManager
+import ru.moistranicy.app.data.SocialSync
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.Badge
@@ -80,7 +83,9 @@ class MainActivity : ComponentActivity() {
         KnownAuthors.init(applicationContext)
         RecBlock.init(applicationContext)
         Account.init(applicationContext)
+        SocialSync.init(applicationContext)
         SyncManager.syncInBackground()
+        SocialSync.pushInBackground()
         Notifier.ensureChannel(applicationContext)
         CycleCheckWorker.schedule(applicationContext)
         openRequest.value = intent?.getStringExtra(Notifier.EXTRA_OPEN)
@@ -116,13 +121,14 @@ private data class Tab(val route: String, val label: String, val icon: ImageVect
 private val tabs = listOf(
     Tab("shelf", "Полка", Icons.Filled.Home),
     Tab("authors", "Авторы", Icons.Filled.Face),
-    Tab("recs", "Рекомендации", Icons.Filled.ThumbUp),
+    Tab("feed", "Лента", Icons.Filled.Favorite),
+    Tab("recs", "Советы", Icons.Filled.ThumbUp),
     Tab("search", "Поиск", Icons.Filled.Search),
-    Tab("profile", "Профиль", Icons.Filled.Person),
 )
 
 fun NavHostController.openBook(id: String) = navigate("book/$id")
 fun NavHostController.openAuthor(id: String) = navigate("author/$id")
+fun NavHostController.openUser(id: String) = navigate("user/$id")
 
 @Composable
 fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
@@ -163,6 +169,7 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
         }
     }
 
+    CompositionLocalProvider(LocalOpenProfile provides { nav.navigate("profile") { launchSingleTop = true } }) {
     Scaffold(
         contentWindowInsets = NoInsets,
         bottomBar = {
@@ -207,10 +214,33 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
                 AuthorsCloudScreen(onAuthor = { nav.openAuthor(it) }, onBook = { nav.openBook(it) })
             }
             composable("recs") { RecommendationsScreen(onBook = { nav.openBook(it) }) }
+            composable("feed") {
+                FeedScreen(
+                    onBook = { nav.openBook(it) },
+                    onUser = { nav.openUser(it) },
+                    onPeople = { nav.navigate("people") },
+                    onProfile = { nav.navigate("profile") },
+                )
+            }
+            composable("people") { PeopleScreen(onBack = { nav.popBackStack() }, onUser = { nav.openUser(it) }) }
+            composable("user/{id}") { e ->
+                UserScreen(
+                    id = e.arguments?.getString("id").orEmpty(),
+                    onBack = { nav.popBackStack() },
+                    onBook = { nav.openBook(it) },
+                    onUser = { nav.openUser(it) },
+                )
+            }
             composable("search") {
                 SearchScreen(onBook = { nav.openBook(it) }, onAuthor = { nav.openAuthor(it) })
             }
-            composable("profile") { ProfileScreen(onBook = { nav.openBook(it) }) }
+            composable("profile") {
+                ProfileScreen(
+                    onBook = { nav.openBook(it) },
+                    onUser = { nav.openUser(it) },
+                    onPeople = { nav.navigate("people") },
+                )
+            }
             composable("book/{id}") { e ->
                 BookScreen(
                     id = e.arguments?.getString("id").orEmpty(),
@@ -227,5 +257,6 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
                 )
             }
         }
+    }
     }
 }

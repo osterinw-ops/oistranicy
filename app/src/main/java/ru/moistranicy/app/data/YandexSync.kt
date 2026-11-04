@@ -68,6 +68,7 @@ object Account {
         avatarUrl = null
         sp.edit().clear().apply()
         SyncManager.lastSyncAt = 0L
+        SocialSync.reset()
     }
 }
 
@@ -231,6 +232,8 @@ object SyncManager {
                     "https://avatars.yandex.net/get-yapic/$avatarId/islands-retina-middle" else null,
             )
         }
-        syncNow()
+        val ok = syncNow()
+        SocialSync.pushInBackground()
+        ok
     }
 }
