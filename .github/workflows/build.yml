@@ -16,11 +16,26 @@ jobs:
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.7'
+          gradle-version: '8.10.2'
+      - name: Prepare signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+            echo "SIGNED=release" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Секрет KEYSTORE_BASE64 не задан — APK подписан отладочным ключом, для RuStore не подходит"
+            echo "SIGNED=debug" >> "$GITHUB_ENV"
+          fi
       - name: Build
-        run: gradle assembleDebug --no-daemon --stacktrace
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: gradle assembleRelease --no-daemon --stacktrace
       - name: Rename
-        run: cp app/build/outputs/apk/debug/app-debug.apk moistranicy.apk
+        run: cp app/build/outputs/apk/release/app-release.apk moistranicy.apk
       - uses: actions/upload-artifact@v4
         with:
           name: moistranicy
@@ -29,5 +44,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          if [ "$SIGNED" = "release" ]; then NOTE="Подписан релизным ключом — подходит для загрузки в RuStore."; else NOTE="Подписан отладочным ключом (секреты не настроены)."; fi
           gh release delete latest -y --cleanup-tag || true
-          gh release create latest moistranicy.apk --title "МоиСтраницы" --notes "Скачайте APK на телефон и установите (разрешите установку из неизвестных источников)."
+          gh release create latest moistranicy.apk --title "МоиСтраницы" --notes "Скачайте APK на телефон и установите (разрешите установку из неизвестных источников). $NOTE"

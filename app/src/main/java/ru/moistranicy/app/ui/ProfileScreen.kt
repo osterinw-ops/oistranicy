@@ -113,7 +113,6 @@ fun ProfileScreen(onBook: (String) -> Unit) {
 
 @Composable
 private fun SettingsCard() {
-    var url by remember { mutableStateOf(AppPrefs.baseUrl) }
     var goal by remember { mutableStateOf(AppPrefs.yearGoal.toString()) }
     Card {
         Text("Настройки", style = MaterialTheme.typography.titleMedium)
@@ -126,29 +125,12 @@ private fun SettingsCard() {
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier.fillMaxWidth(),
         )
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-            value = url,
-            onValueChange = { url = it },
-            label = { Text("Адрес каталога (зеркало)") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Row {
-            TextButton(onClick = {
-                goal.toIntOrNull()?.let { AppPrefs.saveYearGoal(it) }
-                AppPrefs.saveBaseUrl(url)
-                url = AppPrefs.baseUrl
-                goal = AppPrefs.yearGoal.toString()
-            }) { Text("Сохранить") }
-            TextButton(onClick = {
-                AppPrefs.saveBaseUrl(AppPrefs.DEFAULT_BASE_URL)
-                url = AppPrefs.baseUrl
-            }) { Text("Сбросить адрес") }
-        }
+        TextButton(onClick = {
+            goal.toIntOrNull()?.let { AppPrefs.saveYearGoal(it) }
+            goal = AppPrefs.yearGoal.toString()
+        }) { Text("Сохранить") }
         Text(
-            "Описания книг берутся из OPDS-каталога. Полка хранится только на этом телефоне.",
+            "Данные о книгах: FantLab (fantlab.ru) и Google Книги. Полка хранится только на этом телефоне.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

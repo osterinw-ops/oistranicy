@@ -1,6 +1,5 @@
 package ru.moistranicy.app.ui
 
-import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -22,12 +21,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
-import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
 import ru.moistranicy.app.data.AppPrefs
 import ru.moistranicy.app.data.ShelfRepository
 
@@ -52,8 +49,7 @@ private val tabs = listOf(
 )
 
 fun NavHostController.openBook(id: String) = navigate("book/$id")
-fun NavHostController.openFeed(title: String, href: String) =
-    navigate("feed?title=${Uri.encode(title)}&href=${Uri.encode(href)}")
+fun NavHostController.openAuthor(id: String) = navigate("author/$id")
 
 @Composable
 fun AppRoot() {
@@ -85,29 +81,22 @@ fun AppRoot() {
         NavHost(nav, startDestination = "shelf", modifier = Modifier.padding(pad)) {
             composable("shelf") { ShelfScreen(onBook = { nav.openBook(it) }) }
             composable("search") {
-                SearchScreen(onBook = { nav.openBook(it) }, onFeed = { t, h -> nav.openFeed(t, h) })
+                SearchScreen(onBook = { nav.openBook(it) }, onAuthor = { nav.openAuthor(it) })
             }
             composable("profile") { ProfileScreen(onBook = { nav.openBook(it) }) }
             composable("book/{id}") { e ->
                 BookScreen(
                     id = e.arguments?.getString("id").orEmpty(),
                     onBack = { nav.popBackStack() },
-                    onFeed = { t, h -> nav.openFeed(t, h) },
+                    onBook = { nav.openBook(it) },
+                    onAuthor = { nav.openAuthor(it) },
                 )
             }
-            composable(
-                "feed?title={title}&href={href}",
-                arguments = listOf(
-                    navArgument("title") { type = NavType.StringType; defaultValue = "" },
-                    navArgument("href") { type = NavType.StringType; defaultValue = "" },
-                ),
-            ) { e ->
-                FeedScreen(
-                    title = e.arguments?.getString("title").orEmpty(),
-                    href = e.arguments?.getString("href").orEmpty(),
+            composable("author/{id}") { e ->
+                AuthorScreen(
+                    id = e.arguments?.getString("id").orEmpty(),
                     onBack = { nav.popBackStack() },
                     onBook = { nav.openBook(it) },
-                    onFeed = { t, h -> nav.openFeed(t, h) },
                 )
             }
         }

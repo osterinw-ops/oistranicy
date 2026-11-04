@@ -42,8 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import ru.moistranicy.app.data.Book
-import ru.moistranicy.app.data.OpdsClient
-import ru.moistranicy.app.data.OpdsEntry
+import ru.moistranicy.app.data.AuthorHit
 import ru.moistranicy.app.data.ReadStatus
 import ru.moistranicy.app.data.ShelfRepository
 
@@ -65,7 +64,7 @@ fun BookCover(book: Book, modifier: Modifier = Modifier, corner: Dp = 10.dp) {
         )
         if (book.coverUrl != null) {
             AsyncImage(
-                model = OpdsClient.absolute(book.coverUrl),
+                model = book.coverUrl,
                 contentDescription = book.title,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
@@ -114,6 +113,15 @@ fun BookRow(book: Book, onClick: () -> Unit) {
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+            val meta = listOfNotNull(book.workType, book.year).joinToString(", ")
+            if (meta.isNotEmpty() || book.communityRating != null) {
+                Text(
+                    meta + (book.communityRating?.let { (if (meta.isEmpty()) "" else " · ") + "★ " + "%.1f".format(it) } ?: ""),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
             if (book.authors.isNotEmpty()) {
                 Text(
                     book.authorsLine,
@@ -175,35 +183,20 @@ fun NavRow(title: String, subtitle: String, onClick: () -> Unit) {
     }
 }
 
-/** Список книг и разделов каталога с кнопкой «Загрузить ещё». */
 @Composable
-fun EntryList(
-    entries: List<OpdsEntry>,
-    hasMore: Boolean,
-    loadingMore: Boolean,
-    onLoadMore: () -> Unit,
-    onBook: (String) -> Unit,
-    onFeed: (String, String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
-        items(entries) { e ->
-            when (e) {
-                is OpdsEntry.BookEntry -> BookRow(e.book) { onBook(e.book.id) }
-                is OpdsEntry.NavEntry -> NavRow(e.title, e.subtitle) { onFeed(e.title, e.href) }
-            }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
-        }
-        if (hasMore) {
-            item {
-                Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                    if (loadingMore) CircularProgressIndicator()
-                    else OutlinedButton(onClick = onLoadMore) { Text("Загрузить ещё") }
-                }
-            }
-        }
+fun AuthorRow(hit: AuthorHit, onClick: () -> Unit) = NavRow(hit.name, hit.subtitle, onClick)
+
+/** Подвал списка с кнопкой «Загрузить ещё». */
+@Composable
+fun LoadMoreFooter(loading: Boolean, onLoadMore: () -> Unit) {
+    Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+        if (loading) CircularProgressIndicator()
+        else OutlinedButton(onClick = onLoadMore) { Text("Загрузить ещё") }
     }
 }
+
+@Composable
+fun RowDivider() = HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
 
 @Composable
 fun CenterMessage(text: String, action: String? = null, onAction: () -> Unit = {}) {
@@ -230,5 +223,4 @@ fun Loading() {
 }
 
 fun errorText(e: Throwable): String =
-    "Не удалось загрузить каталог.\n${e.message ?: e.javaClass.simpleName}\n\n" +
-        "Если сайт недоступен, включите VPN или укажите зеркало в Профиле."
+    "Не удалось загрузить данные.\n${e.message ?: e.javaClass.simpleName}\n\nПроверьте подключение к интернету."

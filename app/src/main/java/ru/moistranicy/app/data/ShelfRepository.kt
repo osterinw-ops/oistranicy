@@ -45,6 +45,13 @@ object ShelfRepository {
 
     fun remove(id: String) = update(_entries.value - id)
 
+    /** Подменяет сохранённое описание книги более полным (без изменения статуса и дат). */
+    fun refreshBook(book: Book) {
+        val old = _entries.value[book.id] ?: return
+        if (old.book == book) return
+        update(_entries.value + (book.id to old.copy(book = book)))
+    }
+
     private fun update(map: Map<String, ShelfEntry>) {
         _entries.value = map
         val json = toJson(map.values).toString()
@@ -102,6 +109,9 @@ object ShelfRepository {
         putOpt("seriesId", b.seriesId)
         putOpt("seriesName", b.seriesName)
         putOpt("seriesNumber", b.seriesNumber)
+        putOpt("workType", b.workType)
+        put("isCycle", b.isCycle)
+        putOpt("communityRating", b.communityRating?.toDouble())
     }
 
     private fun bookFromJson(o: JSONObject): Book {
@@ -122,6 +132,10 @@ object ShelfRepository {
             seriesId = o.optStringOrNull("seriesId"),
             seriesName = o.optStringOrNull("seriesName"),
             seriesNumber = o.optIntOrNull("seriesNumber"),
+            workType = o.optStringOrNull("workType"),
+            isCycle = o.optBoolean("isCycle", false),
+            communityRating = if (o.has("communityRating") && !o.isNull("communityRating"))
+                o.getDouble("communityRating").toFloat() else null,
         )
     }
 
