@@ -30,6 +30,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
@@ -99,15 +104,32 @@ private enum class SearchMode(val title: String) {
 private object SearchHolder {
     var query by mutableStateOf("")
     var mode by mutableStateOf(SearchMode.WORKS)
-    val works = PagedState<Book> { q, p -> FantLab.searchWorks(q, p) }
-    val authors = PagedState<AuthorHit> { q, p -> FantLab.searchAuthors(q, p) }
-    val google = PagedState<Book> { q, p -> GoogleBooks.search(q, p) }
+    var works = PagedState<Book> { q, p -> FantLab.searchWorks(q, p) }
+    var authors = PagedState<AuthorHit> { q, p -> FantLab.searchAuthors(q, p) }
+    var google = PagedState<Book> { q, p -> GoogleBooks.search(q, p) }
+    /** Меняется при сбросе — поле ввода получает фокус. */
+    var resetNonce by mutableIntStateOf(0)
+}
+
+/** Полный сброс поиска (повторное нажатие на вкладку «Поиск»). */
+fun resetSearch() {
+    SearchHolder.query = ""
+    SearchHolder.mode = SearchMode.WORKS
+    SearchHolder.works = PagedState { q, p -> FantLab.searchWorks(q, p) }
+    SearchHolder.authors = PagedState { q, p -> FantLab.searchAuthors(q, p) }
+    SearchHolder.google = PagedState { q, p -> GoogleBooks.search(q, p) }
+    SearchHolder.resetNonce++
 }
 
 @Composable
 fun SearchScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     val focus = LocalFocusManager.current
+    val focusRequester = remember { FocusRequester() }
+    val nonce = SearchHolder.resetNonce
+    LaunchedEffect(nonce) {
+        if (nonce > 0) runCatching { focusRequester.requestFocus() }
+    }
 
     fun run() {
         val q = SearchHolder.query.trim()
@@ -125,7 +147,7 @@ fun SearchScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit) {
             OutlinedTextField(
                 value = SearchHolder.query,
                 onValueChange = { SearchHolder.query = it },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).focusRequester(focusRequester),
                 placeholder = { Text("Название книги или автор") },
                 leadingIcon = { Icon(Icons.Filled.Search, null) },
                 trailingIcon = {

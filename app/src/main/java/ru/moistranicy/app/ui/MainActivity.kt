@@ -13,6 +13,8 @@ import androidx.compose.material3.BadgedBox
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import ru.moistranicy.app.data.CycleCheckWorker
 import ru.moistranicy.app.data.CycleRepository
@@ -89,6 +91,12 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
     val nav = rememberNavController()
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
+    // вкладка, на которой пользователь сейчас (в том числе на вложенных экранах)
+    var currentTab by remember { mutableStateOf("shelf") }
+    LaunchedEffect(route) {
+        val r = route
+        if (r == "shelf" || r == "search" || r == "profile") currentTab = r
+    }
     val cycles by CycleRepository.cycles.collectAsState()
     val newCount = cycles.values.sumOf { it.newIds.size }
     val context = LocalContext.current
@@ -103,6 +111,7 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
         if (openRequest == "cycles") {
             ShelfUi.tab = ReadStatus.WANT.ordinal
             goTab("shelf")
+            currentTab = "shelf"
         }
         if (openRequest != null) onOpenHandled()
     }
@@ -123,7 +132,20 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
                 tabs.forEach { t ->
                     NavigationBarItem(
                         selected = route == t.route,
-                        onClick = { goTab(t.route) },
+                        onClick = {
+                            if (t.route == "search" && currentTab == "search") {
+                                // повторное нажатие: сбросить поиск и открыть его заново
+                                resetSearch()
+                                nav.navigate("search") {
+                                    popUpTo(nav.graph.findStartDestination().id) { saveState = false }
+                                    launchSingleTop = true
+                                    restoreState = false
+                                }
+                            } else {
+                                goTab(t.route)
+                            }
+                            currentTab = t.route
+                        },
                         icon = {
                             if (t.route == "shelf" && newCount > 0) {
                                 BadgedBox(badge = { Badge { Text("$newCount") } }) { Icon(t.icon, contentDescription = null) }
