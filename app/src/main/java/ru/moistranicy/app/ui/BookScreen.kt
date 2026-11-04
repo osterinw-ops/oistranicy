@@ -191,6 +191,18 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                             color = Coral,
                         )
                     }
+                    // поиск в Яндексе: «автор название скачать fb2»
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Найти FB2 в Яндексе →",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable {
+                            val q = listOfNotNull(book.authors.firstOrNull()?.name, book.title, "скачать fb2")
+                                .joinToString(" ")
+                            runCatching { uri.openUri("https://yandex.ru/search/?text=" + Uri.encode(q)) }
+                        }.padding(vertical = 2.dp),
+                    )
                 }
             }
 
