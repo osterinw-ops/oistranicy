@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Text
@@ -268,6 +269,99 @@ fun BookPosterWide(book: ru.moistranicy.app.data.Book, modifier: Modifier = Modi
                 .padding(end = 8.dp)
                 .size(width = 5.dp, height = 10.dp)
                 .background(Coral),
+        )
+    }
+}
+
+/** Корешок на постере цикла. */
+data class Spine(val id: String, val status: ru.moistranicy.app.data.ReadStatus?, val published: Boolean, val isNew: Boolean)
+
+/**
+ * Горизонтальный постер цикла «Корешки»: книги цикла стоят на полке,
+ * прочитанные закрашены фиолетовым, читаемая — коралловая, непрочитанные — пустые.
+ * Отличается от книги и формой (горизонтальный), и смыслом (сразу виден прогресс).
+ */
+@Composable
+fun SeriesShelfPoster(title: String, spines: List<Spine>, modifier: Modifier = Modifier) {
+    val read = spines.count { it.published && it.status == ru.moistranicy.app.data.ReadStatus.READ }
+    val total = spines.count { it.published }
+    val shades = listOf(Color(0xFF8A7CFF), Color(0xFF7B6CF6), Color(0xFF6A5BE6), Color(0xFF5B4BDB), Color(0xFF4A3CC4), Color(0xFF3A2D9C))
+    androidx.compose.foundation.layout.Column(
+        modifier
+            .size(width = 136.dp, height = 84.dp)
+            .shadow(3.dp, RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(8.dp))
+            .background(Brush.verticalGradient(listOf(Color(0xFF241E3A), Color(0xFF17132A))))
+            .padding(start = 6.dp, end = 6.dp, top = 5.dp),
+    ) {
+        Text(
+            title.uppercase(),
+            color = Color.White,
+            fontSize = 8.sp,
+            lineHeight = 9.sp,
+            fontWeight = FontWeight.ExtraBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center,
+        )
+        androidx.compose.foundation.layout.Row(
+            Modifier.fillMaxWidth().weight(1f).padding(top = 4.dp),
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(1.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            val showNumbers = spines.size <= 12
+            spines.forEachIndexed { i, sp ->
+                val filled = when {
+                    !sp.published -> null
+                    sp.status == ru.moistranicy.app.data.ReadStatus.READ -> shades[i % shades.size]
+                    sp.status == ru.moistranicy.app.data.ReadStatus.READING -> Coral
+                    sp.status == ru.moistranicy.app.data.ReadStatus.DROPPED -> Color(0xFF5A556E)
+                    else -> null
+                }
+                // корешки чуть разной высоты — как настоящие книги
+                val h = 0.78f + ((i * 37) % 23) / 100f
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxHeight(h)
+                        .clip(RoundedCornerShape(topStart = 1.5.dp, topEnd = 1.5.dp))
+                        .then(
+                            if (filled != null) Modifier.background(filled)
+                            else Modifier.border(
+                                0.6.dp,
+                                Color.White.copy(alpha = if (sp.published) 0.35f else 0.15f),
+                                RoundedCornerShape(topStart = 1.5.dp, topEnd = 1.5.dp),
+                            ),
+                        ),
+                ) {
+                    if (sp.isNew) {
+                        Box(
+                            Modifier.align(Alignment.TopCenter).padding(top = 2.dp)
+                                .size(4.dp).clip(RoundedCornerShape(2.dp)).background(Coral),
+                        )
+                    }
+                    if (showNumbers) {
+                        Text(
+                            "${i + 1}",
+                            color = Color.White.copy(alpha = if (filled != null) 0.9f else 0.45f),
+                            fontSize = 6.sp,
+                            lineHeight = 6.sp,
+                            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 2.dp),
+                        )
+                    }
+                }
+            }
+        }
+        // полка
+        Box(Modifier.fillMaxWidth().height(3.dp).background(Coral))
+        Text(
+            if (total == 0) "анонс" else "$read из $total",
+            color = Color.White.copy(alpha = 0.7f),
+            fontSize = 7.sp,
+            lineHeight = 8.sp,
+            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+            textAlign = TextAlign.Center,
         )
     }
 }

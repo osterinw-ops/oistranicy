@@ -92,8 +92,10 @@ private data class Group(
     val dropped: Boolean = false,
     val posterUrl: String? = null,
     val bookCount: Int? = null,
-    /** Отдельные книги — с горизонтальным постером. */
+    /** Отдельные книги (без цикла). */
     val singles: Boolean = false,
+    /** Корешки для постера цикла. */
+    val spines: List<Spine> = emptyList(),
 )
 
 /**
@@ -138,6 +140,7 @@ private fun buildGroups(
                 posterUrl = c.coverUrl?.takeIf { it.contains("/images/editions/") }
                     ?: c.books.firstOrNull { it.published && it.coverUrl != null }?.coverUrl,
                 bookCount = published.size,
+                spines = c.books.map { b -> Spine(b.id, shelf[b.id]?.status, b.published, b.id in c.newIds) },
             )
         }
     }
@@ -161,6 +164,8 @@ private fun buildGroups(
             author = b0.authorsLine.ifEmpty { null },
             genres = list.flatMap { it.book.genres }.distinct(),
             posterUrl = list.firstNotNullOfOrNull { it.book.coverUrl },
+            spines = list.sortedBy { it.book.seriesNumber ?: Int.MAX_VALUE }
+                .map { e -> Spine(e.book.id, e.status, true, false) },
         )
     }.sortedBy { it.title }
     val singles = rest.filter { it.book.seriesName == null }
@@ -290,7 +295,7 @@ fun ShelfScreen(onBook: (String) -> Unit) {
                                     sub = l.sub,
                                     isNew = l.isNew,
                                     published = l.published,
-                                    indent = if (g.isSeries) 92 else 16,
+                                    indent = if (g.isSeries) 28 else 16,
                                 ) { onBook(l.id) }
                             }
                         }
@@ -315,12 +320,9 @@ private fun SeriesHeader(g: Group, open: Boolean, onToggle: () -> Unit, onBook: 
             .padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SeriesPoster(
-            imageUrl = null, // цикл — всегда стилизованный постер
-            genres = g.genres,
+        SeriesShelfPoster(
             title = g.title.orEmpty(),
-            books = g.bookCount,
-            author = g.author,
+            spines = g.spines,
             modifier = Modifier.then(if (cid != null) Modifier.clickable { onBook(cid) } else Modifier),
         )
         Spacer(Modifier.width(12.dp))
