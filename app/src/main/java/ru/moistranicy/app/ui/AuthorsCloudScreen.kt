@@ -77,10 +77,19 @@ fun AuthorsCloudScreen(onAuthor: (String) -> Unit) {
         val min = authors.minOf { it.count }
         val max = authors.maxOf { it.count }
 
-        // самые читаемые — в центре облака, остальные расходятся к краям
+        // крупные имена чередуем с мелкими, пары раскладываем от центра к краям —
+        // получается облако, а не столбик
         val sorted = authors.sortedWith(compareByDescending<CloudAuthor> { it.count }.thenBy { it.name })
+        val zigzag = ArrayList<CloudAuthor>()
+        var lo = 0
+        var hi = sorted.size - 1
+        var takeBig = true
+        while (lo <= hi) {
+            zigzag += if (takeBig) sorted[lo++] else sorted[hi--]
+            takeBig = !takeBig
+        }
         val cloud = ArrayDeque<CloudAuthor>()
-        sorted.forEachIndexed { i, a -> if (i % 2 == 0) cloud.addLast(a) else cloud.addFirst(a) }
+        zigzag.forEachIndexed { k, a -> if ((k / 2) % 2 == 0) cloud.addLast(a) else cloud.addFirst(a) }
 
         Column(
             Modifier
@@ -110,8 +119,8 @@ fun AuthorsCloudScreen(onAuthor: (String) -> Unit) {
                     val id = a.id
                     Text(
                         a.name,
-                        fontSize = (14 + 24 * t).sp,
-                        lineHeight = (16 + 26 * t).sp,
+                        fontSize = (13 + 19 * t).sp,
+                        lineHeight = (17 + 21 * t).sp,
                         fontWeight = if (t > 0.66f) FontWeight.Bold else if (t > 0.33f) FontWeight.SemiBold else FontWeight.Normal,
                         color = color,
                         textAlign = TextAlign.Center,
