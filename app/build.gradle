@@ -15,7 +15,11 @@ android {
         // номер версии растёт с каждой сборкой в GitHub Actions — обновление ставится поверх
         def run = System.getenv("GITHUB_RUN_NUMBER")
         versionCode run != null ? 100 + run.toInteger() : 4
-        versionName "0.4" + (run != null ? "." + run : "")
+        versionName "0.5" + (run != null ? "." + run : "")
+        // ClientID приложения в Яндекс OAuth (oauth.yandex.ru) — не секрет
+        def yandexClientId = System.getenv("YANDEX_CLIENT_ID") ?: (project.findProperty("yandexClientId") ?: "")
+        manifestPlaceholders = [YANDEX_CLIENT_ID: yandexClientId]
+        buildConfigField "String", "YANDEX_CLIENT_ID", "\"${yandexClientId}\""
     }
     signingConfigs {
         // постоянный отладочный ключ из репозитория: без него GitHub каждый раз
@@ -48,7 +52,7 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = '17' }
-    buildFeatures { compose true }
+    buildFeatures { compose true; buildConfig true }
     lint { checkReleaseBuilds false; abortOnError false }
 }
 
@@ -65,4 +69,5 @@ dependencies {
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
     implementation 'io.coil-kt:coil-compose:2.7.0'
     implementation 'androidx.work:work-runtime-ktx:2.9.1'
+    implementation 'com.yandex.android:authsdk:3.1.3'
 }

@@ -164,12 +164,27 @@ object RecBlock {
     }
 
     @Synchronized
-    private fun save() {
+    private fun save(notify: Boolean = true) {
         if (!::file.isInitialized) return
-        val json = JSONObject().apply {
-            put("books", JSONArray(_books.value.toList()))
-            put("authors", JSONObject().apply { _authors.value.forEach { (k, v) -> put(k, v) } })
-        }.toString()
+        val json = export().toString()
         storeIo.execute { runCatching { file.writeText(json) } }
+        if (notify) SyncManager.onLocalChange()
+    }
+
+    fun export(): JSONObject = JSONObject().apply {
+        put("books", JSONArray(_books.value.toList()))
+        put("authors", JSONObject().apply { _authors.value.forEach { (k, v) -> put(k, v) } })
+    }
+
+    /** Слияние с облаком: скрытые книги объединяются, у авторов берётся более поздний срок. */
+    fun mergeRemote(o: JSONObject) {
+        val b = o.optJSONArray("books") ?: JSONArray()
+        _books.value = _books.value + (0 until b.length()).map { b.getString(it) }
+        val a = o.optJSONObject("authors") ?: JSONObject()
+        val now = System.currentTimeMillis()
+        val merged = HashMap(_authors.value)
+        a.keys().forEach { k -> val v = a.getLong(k); if (v > (merged[k] ?: 0L)) merged[k] = v }
+        _authors.value = merged.filterValues { it > now }
+        save(notify = false)
     }
 }

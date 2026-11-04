@@ -64,6 +64,8 @@ fun ProfileScreen(onBook: (String) -> Unit) {
             Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            AccountCard()
+
             // Цель на год
             Card {
                 Text("Книжный вызов $year", style = MaterialTheme.typography.titleMedium)

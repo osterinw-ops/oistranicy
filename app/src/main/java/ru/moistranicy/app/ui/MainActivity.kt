@@ -15,6 +15,8 @@ import androidx.compose.ui.unit.sp
 import ru.moistranicy.app.data.AuthorStats
 import ru.moistranicy.app.data.KnownAuthors
 import ru.moistranicy.app.data.RecBlock
+import ru.moistranicy.app.data.Account
+import ru.moistranicy.app.data.SyncManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.Badge
@@ -77,6 +79,8 @@ class MainActivity : ComponentActivity() {
         AuthorStats.init(applicationContext)
         KnownAuthors.init(applicationContext)
         RecBlock.init(applicationContext)
+        Account.init(applicationContext)
+        SyncManager.syncInBackground()
         Notifier.ensureChannel(applicationContext)
         CycleCheckWorker.schedule(applicationContext)
         openRequest.value = intent?.getStringExtra(Notifier.EXTRA_OPEN)

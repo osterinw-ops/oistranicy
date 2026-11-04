@@ -12,13 +12,23 @@ import java.util.concurrent.Executors
 object ShelfRepository {
     private lateinit var file: File
     private val io = Executors.newSingleThreadExecutor()
+    private lateinit var deletedFile: File
     private val _entries = MutableStateFlow<Map<String, ShelfEntry>>(emptyMap())
     val entries: StateFlow<Map<String, ShelfEntry>> = _entries
+    /** Когда книга была убрана с полки — нужно для синхронизации между устройствами. */
+    private val deleted = HashMap<String, Long>()
 
     fun init(context: Context) {
         if (::file.isInitialized) return
         file = File(context.filesDir, "shelf.json")
+        deletedFile = File(context.filesDir, "shelf_deleted.json")
         _entries.value = runCatching { load() }.getOrDefault(emptyMap())
+        runCatching {
+            if (deletedFile.exists()) {
+                val o = JSONObject(deletedFile.readText())
+                o.keys().forEach { deleted[it] = o.getLong(it) }
+            }
+        }
     }
 
     fun get(id: String): ShelfEntry? = _entries.value[id]
@@ -35,6 +45,7 @@ object ShelfRepository {
             startedAt = old?.startedAt ?: if (status == ReadStatus.READING || status == ReadStatus.READ) now else null,
             finishedAt = if (status == ReadStatus.READ) (old?.finishedAt ?: now) else old?.finishedAt,
         )
+        synchronized(deleted) { deleted.remove(book.id) }
         update(_entries.value + (book.id to entry))
     }
 
@@ -43,7 +54,12 @@ object ShelfRepository {
         update(_entries.value + (id to old.copy(rating = rating, updatedAt = System.currentTimeMillis())))
     }
 
-    fun remove(id: String) = update(_entries.value - id)
+    fun remove(id: String) {
+        if (!_entries.value.containsKey(id)) return
+        synchronized(deleted) { deleted[id] = System.currentTimeMillis() }
+        saveDeleted()
+        update(_entries.value - id)
+    }
 
     /** Подменяет сохранённое описание книги более полным (без изменения статуса и дат). */
     fun refreshBook(book: Book) {
@@ -52,11 +68,62 @@ object ShelfRepository {
         update(_entries.value + (book.id to old.copy(book = book)))
     }
 
-    private fun update(map: Map<String, ShelfEntry>) {
+    private fun update(map: Map<String, ShelfEntry>, notify: Boolean = true) {
         _entries.value = map
         val json = toJson(map.values).toString()
         io.execute { runCatching { file.writeText(json) } }
+        if (notify) SyncManager.onLocalChange()
     }
+
+    private fun saveDeleted() {
+        val json = synchronized(deleted) { JSONObject().apply { deleted.forEach { (k, v) -> put(k, v) } }.toString() }
+        io.execute { runCatching { deletedFile.writeText(json) } }
+    }
+
+    // ---------- синхронизация ----------
+
+    fun export(): JSONObject = JSONObject().apply {
+        put("entries", toJson(_entries.value.values))
+        put("deleted", synchronized(deleted) { JSONObject().apply { deleted.forEach { (k, v) -> put(k, v) } } })
+    }
+
+    /** Слияние с копией из облака: по каждой книге побеждает самое позднее изменение. */
+    fun mergeRemote(o: JSONObject) {
+        val remote = HashMap<String, ShelfEntry>()
+        o.optJSONArray("entries")?.let { arr ->
+            for (i in 0 until arr.length()) runCatching { entryFromJson(arr.getJSONObject(i)) }.getOrNull()?.let { remote[it.book.id] = it }
+        }
+        val remoteDeleted = HashMap<String, Long>()
+        o.optJSONObject("deleted")?.let { d -> d.keys().forEach { remoteDeleted[it] = d.getLong(it) } }
+
+        val local = _entries.value
+        val result = LinkedHashMap<String, ShelfEntry>()
+        synchronized(deleted) {
+            remoteDeleted.forEach { (k, v) -> if (v > (deleted[k] ?: 0L)) deleted[k] = v }
+            val ids = local.keys + remote.keys
+            for (id in ids) {
+                val l = local[id]
+                val r = remote[id]
+                val best = when {
+                    l == null -> r
+                    r == null -> l
+                    r.updatedAt > l.updatedAt -> r.copy(book = mergeBook(r.book, l.book))
+                    else -> l.copy(book = mergeBook(l.book, r.book))
+                } ?: continue
+                val del = deleted[id]
+                if (del != null && del >= best.updatedAt) continue
+                result[id] = best
+            }
+        }
+        saveDeleted()
+        update(result, notify = false)
+    }
+
+    private fun mergeBook(main: Book, other: Book): Book = main.copy(
+        coverUrl = main.coverUrl ?: other.coverUrl,
+        annotation = main.annotation.ifEmpty { other.annotation },
+        genres = main.genres.ifEmpty { other.genres },
+    )
 
     private fun load(): Map<String, ShelfEntry> {
         if (!file.exists()) return emptyMap()

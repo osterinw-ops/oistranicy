@@ -22,8 +22,19 @@ object CycleRepository {
     fun init(context: Context) {
         if (::file.isInitialized) return
         file = File(context.filesDir, "cycles.json")
+        deletedFile = File(context.filesDir, "cycles_deleted.json")
         _cycles.value = runCatching { load() }.getOrDefault(emptyMap())
+        runCatching {
+            if (deletedFile.exists()) {
+                val o = JSONObject(deletedFile.readText())
+                o.keys().forEach { deleted[it] = o.getLong(it) }
+            }
+        }
     }
+
+    private lateinit var deletedFile: File
+    /** Когда пользователь перестал следить за циклом — для синхронизации. */
+    private val deleted = HashMap<String, Long>()
 
     fun get(id: String): TrackedCycle? = _cycles.value[id]
     fun isTracked(id: String) = _cycles.value.containsKey(id)
@@ -198,11 +209,68 @@ object CycleRepository {
                 it.book.coverUrl ?: BookCache.get(it.book.id)?.coverUrl)
         }
 
+    /** Сохранить изменения: изменённым циклам ставим отметку времени, удалённым — «надгробие». */
     @Synchronized
     private fun save(map: Map<String, TrackedCycle>) {
+        val now = System.currentTimeMillis()
+        val old = _cycles.value
+        val stamped = map.mapValues { (id, c) ->
+            val o = old[id]
+            if (o == null || o.copy(changedAt = 0) != c.copy(changedAt = 0)) c.copy(changedAt = now) else c
+        }
+        (old.keys - map.keys).forEach { deleted[it] = now }
+        map.keys.forEach { deleted.remove(it) }
+        write(stamped)
+        saveDeleted()
+        SyncManager.onLocalChange()
+    }
+
+    private fun write(map: Map<String, TrackedCycle>) {
         _cycles.value = map
         val json = JSONArray().apply { map.values.forEach { put(toJson(it)) } }.toString()
         io.execute { runCatching { file.writeText(json) } }
+    }
+
+    private fun saveDeleted() {
+        val json = JSONObject().apply { deleted.forEach { (k, v) -> put(k, v) } }.toString()
+        io.execute { runCatching { deletedFile.writeText(json) } }
+    }
+
+    // ---------- синхронизация ----------
+
+    @Synchronized
+    fun export(): JSONObject = JSONObject().apply {
+        put("cycles", JSONArray().apply { _cycles.value.values.forEach { put(toJson(it)) } })
+        put("deleted", JSONObject().apply { deleted.forEach { (k, v) -> put(k, v) } })
+    }
+
+    /** Слияние с облаком: по каждому циклу побеждает самое позднее изменение. */
+    @Synchronized
+    fun mergeRemote(o: JSONObject) {
+        val remote = HashMap<String, TrackedCycle>()
+        o.optJSONArray("cycles")?.let { arr ->
+            for (i in 0 until arr.length()) runCatching { fromJson(arr.getJSONObject(i)) }.getOrNull()?.let { remote[it.id] = it }
+        }
+        o.optJSONObject("deleted")?.let { d ->
+            d.keys().forEach { k -> val v = d.getLong(k); if (v > (deleted[k] ?: 0L)) deleted[k] = v }
+        }
+        val local = _cycles.value
+        val result = LinkedHashMap<String, TrackedCycle>()
+        for (id in local.keys + remote.keys) {
+            val l = local[id]
+            val r = remote[id]
+            val best = when {
+                l == null -> r
+                r == null -> l
+                r.changedAt > l.changedAt -> r.copy(newIds = r.newIds + l.newIds)
+                else -> l.copy(newIds = l.newIds + r.newIds)
+            } ?: continue
+            val del = deleted[id]
+            if (del != null && del >= best.changedAt) continue
+            result[id] = best
+        }
+        write(result)
+        saveDeleted()
     }
 
     private fun load(): Map<String, TrackedCycle> {
@@ -236,6 +304,7 @@ object CycleRepository {
         put("checkedAt", c.checkedAt)
         put("genres", JSONArray(c.genres))
         put("dropped", c.dropped)
+        put("changedAt", c.changedAt)
     }
 
     private fun fromJson(o: JSONObject): TrackedCycle {
@@ -266,6 +335,7 @@ object CycleRepository {
             checkedAt = o.optLong("checkedAt"),
             genres = o.optJSONArray("genres")?.let { g -> (0 until g.length()).map { g.getString(it) } }.orEmpty(),
             dropped = o.optBoolean("dropped", false),
+            changedAt = o.optLong("changedAt", 0L),
         )
     }
 }

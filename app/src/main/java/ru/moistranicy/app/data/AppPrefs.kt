@@ -2,6 +2,7 @@ package ru.moistranicy.app.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import org.json.JSONObject
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -35,15 +36,43 @@ object AppPrefs {
     fun saveYearGoal(value: Int) {
         yearGoal = value.coerceIn(1, 1000)
         sp.edit().putInt("yearGoal", yearGoal).apply()
+        changed()
     }
 
     fun saveFontScale(value: Float) {
         fontScale = value
         sp.edit().putFloat("fontScale", value).apply()
+        changed()
     }
 
     fun saveTheme(mode: ThemeMode) {
         themeMode = mode.ordinal
         sp.edit().putInt("themeMode", mode.ordinal).apply()
+        changed()
+    }
+
+    private fun changed() {
+        sp.edit().putLong("prefsChangedAt", System.currentTimeMillis()).apply()
+        SyncManager.onLocalChange()
+    }
+
+    // ---------- синхронизация ----------
+
+    fun export(): JSONObject = JSONObject().apply {
+        put("yearGoal", yearGoal)
+        put("fontScale", fontScale.toDouble())
+        put("themeMode", themeMode)
+        put("changedAt", sp.getLong("prefsChangedAt", 0L))
+    }
+
+    fun mergeRemote(o: JSONObject) {
+        val remoteAt = o.optLong("changedAt", 0L)
+        if (remoteAt <= sp.getLong("prefsChangedAt", 0L)) return
+        yearGoal = o.optInt("yearGoal", yearGoal)
+        fontScale = o.optDouble("fontScale", fontScale.toDouble()).toFloat()
+        themeMode = o.optInt("themeMode", themeMode)
+        sp.edit()
+            .putInt("yearGoal", yearGoal).putFloat("fontScale", fontScale).putInt("themeMode", themeMode)
+            .putLong("prefsChangedAt", remoteAt).apply()
     }
 }

@@ -76,6 +76,8 @@ data class TrackedCycle(
     val genres: List<String> = emptyList(),
     /** Пользователь бросил цикл целиком: не предлагаем и не уведомляем. */
     val dropped: Boolean = false,
+    /** Время последнего изменения — для синхронизации между устройствами. */
+    val changedAt: Long = 0,
 )
 
 private val MINOR_TYPES = setOf(
