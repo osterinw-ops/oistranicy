@@ -316,10 +316,11 @@ private fun SeriesHeader(g: Group, open: Boolean, onToggle: () -> Unit, onBook: 
         verticalAlignment = Alignment.CenterVertically,
     ) {
         SeriesPoster(
-            imageUrl = g.posterUrl,
+            imageUrl = null, // цикл — всегда стилизованный постер
             genres = g.genres,
             title = g.title.orEmpty(),
             books = g.bookCount,
+            author = g.author,
             modifier = Modifier.then(if (cid != null) Modifier.clickable { onBook(cid) } else Modifier),
         )
         Spacer(Modifier.width(12.dp))
@@ -386,8 +387,8 @@ private fun ReadingRow(e: ShelfEntry, cycles: Map<String, TrackedCycle>, onClick
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        BookPosterWide(b)
-        Spacer(Modifier.width(12.dp))
+        BookCover(b, Modifier.width(60.dp), corner = 6.dp)
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 b.title,

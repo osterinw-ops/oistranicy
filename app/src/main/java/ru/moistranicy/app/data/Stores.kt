@@ -147,6 +147,16 @@ object RecBlock {
         save()
     }
 
+    fun unblockBook(id: String) {
+        _books.value = _books.value - id
+        save()
+    }
+
+    fun unblockAuthors(people: List<Person>) {
+        _authors.value = _authors.value - people.map { authorKey(it) }.toSet()
+        save()
+    }
+
     fun blockAuthors(people: List<Person>) {
         val until = System.currentTimeMillis() + HALF_YEAR_MS
         _authors.value = _authors.value + people.associate { authorKey(it) to until }

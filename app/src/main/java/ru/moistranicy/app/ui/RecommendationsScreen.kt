@@ -44,6 +44,13 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import ru.moistranicy.app.data.RecBlock
+import ru.moistranicy.app.R
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.runtime.remember
+import androidx.compose.ui.res.painterResource
 import ru.moistranicy.app.data.Recommendation
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.TextButton
@@ -65,6 +72,7 @@ private object RecsState {
 fun RecommendationsScreen(onBook: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     val scroll = rememberScrollState()
+    val snackbar = remember { SnackbarHostState() }
 
     fun load() {
         if (RecsState.loading) return
@@ -108,6 +116,7 @@ fun RecommendationsScreen(onBook: (String) -> Unit) {
 
     Scaffold(
         contentWindowInsets = NoInsets,
+        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             AppTopBar(
                 "Мои рекомендации",
@@ -145,7 +154,25 @@ fun RecommendationsScreen(onBook: (String) -> Unit) {
                 )
                 else -> Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
                     shown.forEach { r ->
-                        RecCard(r) { onBook(r.book.id) }
+                        RecCard(
+                            r,
+                            onHideBook = {
+                                RecBlock.blockBook(r.book.id)
+                                scope.launch {
+                                    val res = snackbar.showSnackbar("Книга скрыта навсегда", "Отменить", duration = SnackbarDuration.Short)
+                                    if (res == SnackbarResult.ActionPerformed) RecBlock.unblockBook(r.book.id)
+                                }
+                            },
+                            onHideAuthor = {
+                                RecBlock.blockAuthors(r.book.authors)
+                                scope.launch {
+                                    val res = snackbar.showSnackbar(
+                                        "${r.book.authorsLine} — скрыт на полгода", "Отменить", duration = SnackbarDuration.Short,
+                                    )
+                                    if (res == SnackbarResult.ActionPerformed) RecBlock.unblockAuthors(r.book.authors)
+                                }
+                            },
+                        ) { onBook(r.book.id) }
                         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
                     }
                     Row(
@@ -169,13 +196,26 @@ fun RecommendationsScreen(onBook: (String) -> Unit) {
 }
 
 @Composable
-private fun RecCard(r: Recommendation, onClick: () -> Unit) {
+private fun RecCard(
+    r: Recommendation,
+    onHideBook: () -> Unit,
+    onHideAuthor: () -> Unit,
+    onClick: () -> Unit,
+) {
     val b = r.book
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp)) {
+    Box(Modifier.fillMaxWidth()) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp)) {
         BookCover(b, Modifier.width(72.dp), corner = 6.dp)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(b.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(
+                b.title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(end = 64.dp),
+            )
             if (b.authors.isNotEmpty()) {
                 Text(b.authorsLine, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
             }
@@ -199,25 +239,28 @@ private fun RecCard(r: Recommendation, onClick: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
                 )
             }
-            Row(Modifier.padding(top = 2.dp)) {
-                TextButton(
-                    onClick = { RecBlock.blockBook(b.id) },
-                    contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
-                ) {
-                    Text("✕ Не рекомендовать книгу", style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Spacer(Modifier.width(12.dp))
-                if (b.authors.isNotEmpty()) {
-                    TextButton(
-                        onClick = { RecBlock.blockAuthors(b.authors) },
-                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
-                    ) {
-                        Text("✕ Не рекомендовать автора", style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
+        }
+    }
+    // «не рекомендовать» — иконки в правом верхнем углу карточки
+    Row(Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 4.dp)) {
+        IconButton(onClick = onHideBook, modifier = Modifier.size(34.dp)) {
+            Icon(
+                painterResource(R.drawable.ic_thumb_down),
+                contentDescription = "Не рекомендовать книгу",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        if (b.authors.isNotEmpty()) {
+            IconButton(onClick = onHideAuthor, modifier = Modifier.size(34.dp)) {
+                Icon(
+                    painterResource(R.drawable.ic_person_off),
+                    contentDescription = "Не рекомендовать автора",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    modifier = Modifier.size(18.dp),
+                )
             }
         }
+    }
     }
 }

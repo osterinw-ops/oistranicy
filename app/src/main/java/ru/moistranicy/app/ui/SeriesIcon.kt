@@ -2,6 +2,7 @@ package ru.moistranicy.app.ui
 
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -117,33 +118,56 @@ fun SeriesPoster(
     title: String,
     books: Int?,
     modifier: Modifier = Modifier,
+    author: String? = null,
 ) {
     val grad = POSTER_GRADIENTS[(title.hashCode() and 0x7fffffff) % POSTER_GRADIENTS.size]
     Box(
         modifier
-            .size(width = 64.dp, height = 96.dp)
+            .size(width = 66.dp, height = 100.dp)
             .shadow(3.dp, RoundedCornerShape(8.dp))
             .clip(RoundedCornerShape(8.dp))
             .background(Brush.linearGradient(grad)),
     ) {
         // рисованный постер (виден, если картинки нет или она не загрузилась)
+        // крупный символ жанра — «картинка» постера
         Icon(
             painterResource(themeIconFor(genres)),
             contentDescription = null,
-            tint = Color.White.copy(alpha = 0.22f),
-            modifier = Modifier.size(58.dp).align(Alignment.TopCenter).offset(y = 6.dp),
+            tint = Color.White.copy(alpha = 0.3f),
+            modifier = Modifier.size(62.dp).align(Alignment.TopCenter).offset(y = 4.dp),
         )
-        Text(
-            title,
-            color = Color.White,
-            fontSize = 9.sp,
-            lineHeight = 10.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.align(Alignment.Center).padding(horizontal = 4.dp).offset(y = 14.dp),
+        // тонкая рамка-«виньетка», как у афиши
+        Box(
+            Modifier
+                .fillMaxSize()
+                .padding(3.dp)
+                .border(0.5.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(6.dp)),
         )
+        androidx.compose.foundation.layout.Column(
+            Modifier.align(Alignment.Center).padding(horizontal = 5.dp).offset(y = 14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                title.uppercase(),
+                color = Color.White,
+                fontSize = 8.sp,
+                lineHeight = 9.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
+            if (!author.isNullOrBlank()) {
+                Text(
+                    author.substringAfterLast(' '),
+                    color = Color.White.copy(alpha = 0.8f),
+                    fontSize = 7.sp,
+                    lineHeight = 8.sp,
+                    maxLines = 1,
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
         if (imageUrl != null) {
             AsyncImage(
                 model = imageUrl,
