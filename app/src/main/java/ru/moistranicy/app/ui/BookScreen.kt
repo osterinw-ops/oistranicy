@@ -89,6 +89,7 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                 details = d
                 // открыт отслеживаемый цикл — заодно синхронизируем его состав
                 if (CycleRepository.isTracked(id)) CycleRepository.applyUpdate(d)
+                CycleRepository.updateCover(id, d.book.coverUrl)
                 // обновляем книгу на полке свежими данными (обложка, аннотация, цикл)
                 ShelfRepository.get(id)?.let { ShelfRepository.refreshBook(d.book) }
             } catch (e: CancellationException) {

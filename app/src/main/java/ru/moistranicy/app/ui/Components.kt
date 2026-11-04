@@ -31,6 +31,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -288,6 +291,53 @@ fun CompactBookLine(
         }
         if (status != null) {
             Text(" " + status.title.lowercase(), style = MaterialTheme.typography.labelSmall, color = statusColor(status))
+        }
+    }
+}
+
+/**
+ * Обложка серии: веер из обложек её книг (до трёх).
+ * Если обложек нет — градиент с первой буквой названия.
+ */
+@Composable
+fun SeriesCollage(covers: List<String>, title: String, modifier: Modifier = Modifier) {
+    Box(modifier.width(56.dp).height(76.dp), contentAlignment = Alignment.Center) {
+        if (covers.isEmpty()) {
+            Box(
+                Modifier
+                    .width(48.dp)
+                    .height(68.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Brush.linearGradient(listOf(Violet, VioletDeep))),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(title.take(1).uppercase(), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+            }
+            return@Box
+        }
+        // задние обложки веером, передняя — первая книга серии
+        val layers = covers.take(3).reversed()
+        layers.forEachIndexed { i, url ->
+            val fromFront = layers.size - 1 - i
+            val angle = when (fromFront) { 0 -> 0f; 1 -> -9f; else -> 9f }
+            val dx = when (fromFront) { 0 -> 0; 1 -> -6; else -> 6 }
+            Box(
+                Modifier
+                    .offset(x = dx.dp)
+                    .rotate(angle)
+                    .width(44.dp)
+                    .height(64.dp)
+                    .shadow(if (fromFront == 0) 3.dp else 1.dp, RoundedCornerShape(5.dp))
+                    .clip(RoundedCornerShape(5.dp))
+                    .background(Brush.linearGradient(listOf(Violet, VioletDeep))),
+            ) {
+                AsyncImage(
+                    model = url,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
     }
 }

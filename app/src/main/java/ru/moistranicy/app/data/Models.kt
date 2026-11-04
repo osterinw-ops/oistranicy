@@ -59,6 +59,7 @@ data class CycleBook(
     val year: String?,
     val type: String?,
     val published: Boolean,
+    val coverUrl: String? = null,
 )
 
 /** Цикл, за которым следит пользователь. newIds — книги, появившиеся с прошлого просмотра. */

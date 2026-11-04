@@ -37,7 +37,9 @@ object CycleRepository {
             name = details.book.title,
             authors = details.book.authors,
             coverUrl = details.book.coverUrl,
-            books = toCycleBooks(details),
+            books = toCycleBooks(details).map { b ->
+                b.copy(coverUrl = b.coverUrl ?: old?.books?.firstOrNull { it.id == b.id }?.coverUrl)
+            },
             newIds = old?.newIds ?: emptySet(),
             followedAt = old?.followedAt ?: now,
             checkedAt = now,
@@ -75,6 +77,7 @@ object CycleRepository {
         val fresh = toCycleBooks(details)
         if (fresh.isEmpty()) return emptyList()
         val oldById = old.books.associateBy { it.id }
+        val freshWithCovers = fresh.map { b -> b.copy(coverUrl = b.coverUrl ?: oldById[b.id]?.coverUrl) }
         val news = fresh.filter { b ->
             val prev = oldById[b.id]
             (prev == null) || (!prev.published && b.published)
@@ -82,7 +85,7 @@ object CycleRepository {
         val updated = old.copy(
             name = details.book.title.ifBlank { old.name },
             coverUrl = details.book.coverUrl ?: old.coverUrl,
-            books = fresh,
+            books = freshWithCovers,
             newIds = old.newIds + news.map { it.id },
             checkedAt = System.currentTimeMillis(),
         )
@@ -99,6 +102,44 @@ object CycleRepository {
         return result
     }
 
+    /** Обложки для коллажа цикла: до трёх первых вышедших книг. */
+    fun collageCovers(c: TrackedCycle): List<String> =
+        c.books.filter { it.published }.mapNotNull { it.coverUrl }.take(3)
+            .ifEmpty { listOfNotNull(c.coverUrl) }
+
+    /** Запомнить обложку книги, если она входит в отслеживаемые циклы. */
+    fun updateCover(bookId: String, url: String?) {
+        if (url == null) return
+        var changed = false
+        val map = _cycles.value.mapValues { (_, c) ->
+            if (c.books.none { it.id == bookId && it.coverUrl != url }) c
+            else {
+                changed = true
+                c.copy(books = c.books.map { if (it.id == bookId) it.copy(coverUrl = url) else it })
+            }
+        }
+        if (changed) save(map)
+    }
+
+    private val coverJobs = HashSet<String>()
+
+    /** Догрузить обложки первых трёх книг цикла с FantLab (один раз). */
+    suspend fun ensureCovers(cycleId: String) {
+        val c = get(cycleId) ?: return
+        val need = c.books.filter { it.published }.take(3).filter { it.coverUrl == null }
+        if (need.isEmpty()) return
+        synchronized(coverJobs) { if (!coverJobs.add(cycleId)) return }
+        try {
+            for (b in need) {
+                val url = runCatching { FantLab.work(b.id).book.coverUrl }.getOrNull()
+                    ?: BookCache.get(b.id)?.coverUrl
+                updateCover(b.id, url)
+            }
+        } finally {
+            synchronized(coverJobs) { coverJobs.remove(cycleId) }
+        }
+    }
+
     /** Книга как объект Book (для статуса/полки), берём подробную из кэша, если есть. */
     fun bookOf(cycle: TrackedCycle, b: CycleBook): Book =
         BookCache.get(b.id) ?: Book(
@@ -110,7 +151,8 @@ object CycleRepository {
 
     private fun toCycleBooks(d: WorkDetails): List<CycleBook> =
         cycleBooks(d.children).map {
-            CycleBook(it.book.id, it.book.title, it.book.year, it.book.workType, it.published)
+            CycleBook(it.book.id, it.book.title, it.book.year, it.book.workType, it.published,
+                it.book.coverUrl ?: BookCache.get(it.book.id)?.coverUrl)
         }
 
     @Synchronized
@@ -142,7 +184,7 @@ object CycleRepository {
             c.books.forEach { b ->
                 put(JSONObject().apply {
                     put("id", b.id); put("title", b.title); putOpt("year", b.year)
-                    putOpt("type", b.type); put("published", b.published)
+                    putOpt("type", b.type); put("published", b.published); putOpt("coverUrl", b.coverUrl)
                 })
             }
         })
@@ -171,6 +213,7 @@ object CycleRepository {
                     year = if (b.has("year") && !b.isNull("year")) b.getString("year") else null,
                     type = if (b.has("type") && !b.isNull("type")) b.getString("type") else null,
                     published = b.optBoolean("published", true),
+                    coverUrl = if (b.has("coverUrl") && !b.isNull("coverUrl")) b.getString("coverUrl") else null,
                 )
             },
             newIds = (0 until newIds.length()).map { newIds.getString(it) }.toSet(),

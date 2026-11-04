@@ -15,7 +15,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -50,6 +54,8 @@ import ru.moistranicy.app.data.TrackedCycle
 /** Выбранная вкладка полки — переживает переходы и открытие из уведомления. */
 object ShelfUi {
     var tab by mutableIntStateOf(0)
+    /** Раскрытые циклы (по умолчанию все свёрнуты). */
+    val expanded = mutableStateMapOf<String, Boolean>()
 }
 
 private data class Line(
@@ -68,6 +74,13 @@ private data class Group(
     val progress: String?,
     val lines: List<Line>,
     val hasNew: Boolean,
+    /** Сворачиваемая серия с обложкой (для «Вне циклов» — false). */
+    val isSeries: Boolean = false,
+    val covers: List<String> = emptyList(),
+    val author: String? = null,
+    val unread: Int? = null,
+    val total: Int? = null,
+    val tracked: Boolean = false,
 )
 
 /**
@@ -93,7 +106,13 @@ private fun buildGroups(
                 ?: if (!b.published) "ожидается" else null, b.id in c.newIds, b.published)
         }
         if (lines.isNotEmpty()) {
-            cycleGroups += Group(c.id, c.name, c.id, "$read из ${published.size}", lines, c.newIds.isNotEmpty())
+            cycleGroups += Group(
+                key = c.id, title = c.name, cycleId = c.id, progress = "$read из ${published.size}",
+                lines = lines, hasNew = c.newIds.isNotEmpty(), isSeries = true,
+                covers = CycleRepository.collageCovers(c),
+                author = c.authors.joinToString(", ") { it.name }.ifEmpty { null },
+                unread = published.size - read, total = published.size, tracked = true,
+            )
         }
     }
     cycleGroups.sortWith(compareByDescending<Group> { it.hasNew }.thenBy { it.title })
@@ -109,8 +128,11 @@ private fun buildGroups(
             title = b0.seriesName,
             cycleId = b0.seriesId?.takeIf { it.startsWith("fl-") },
             progress = null,
-            lines = list.map { e -> Line(e.book.id, e.book.seriesNumber, e.book.title, e.book.authorsLine, false, true) },
+            lines = list.map { e -> Line(e.book.id, e.book.seriesNumber, e.book.title, e.book.year, false, true) },
             hasNew = false,
+            isSeries = true,
+            covers = list.mapNotNull { it.book.coverUrl }.take(3),
+            author = b0.authorsLine.ifEmpty { null },
         )
     }.sortedBy { it.title }
     val singles = rest.filter { it.book.seriesName == null }
@@ -200,18 +222,32 @@ fun ShelfScreen(onBook: (String) -> Unit) {
                         }
                     }
                     groups.forEach { g ->
-                        if (g.title != null) {
-                            item(key = "h" + g.key) { GroupHeader(g, onBook) }
+                        val open = !g.isSeries || ShelfUi.expanded[g.key] == true
+                        if (g.isSeries) {
+                            item(key = "h" + g.key) {
+                                SeriesHeader(g, open, onToggle = { ShelfUi.expanded[g.key] = !open }, onBook = onBook)
+                            }
+                        } else if (g.title != null) {
+                            item(key = "h" + g.key) {
+                                Text(
+                                    g.title,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 2.dp),
+                                )
+                            }
                         }
-                        items(g.lines, key = { g.key + "/" + it.id }) { l ->
-                            CompactBookLine(
-                                number = l.number,
-                                title = l.title,
-                                sub = l.sub,
-                                isNew = l.isNew,
-                                published = l.published,
-                                indent = if (g.title != null) 20 else 16,
-                            ) { onBook(l.id) }
+                        if (open) {
+                            items(g.lines, key = { g.key + "/" + it.id }) { l ->
+                                CompactBookLine(
+                                    number = l.number,
+                                    title = l.title,
+                                    sub = l.sub,
+                                    isNew = l.isNew,
+                                    published = l.published,
+                                    indent = if (g.isSeries) 84 else 16,
+                                ) { onBook(l.id) }
+                            }
                         }
                     }
                 }
@@ -221,25 +257,64 @@ fun ShelfScreen(onBook: (String) -> Unit) {
 }
 
 @Composable
-private fun GroupHeader(g: Group, onBook: (String) -> Unit) {
+private fun SeriesHeader(g: Group, open: Boolean, onToggle: () -> Unit, onBook: (String) -> Unit) {
     val cid = g.cycleId
+    if (g.tracked && cid != null) {
+        // догружаем обложки книг серии для коллажа
+        LaunchedEffect(cid) { CycleRepository.ensureCovers(cid) }
+    }
     Row(
         Modifier
             .fillMaxWidth()
-            .then(if (cid != null) Modifier.clickable { onBook(cid) } else Modifier)
-            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 2.dp),
+            .clickable(onClick = onToggle)
+            .padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
+        SeriesCollage(
+            g.covers,
             g.title.orEmpty(),
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
+            Modifier.then(if (cid != null) Modifier.clickable { onBook(cid) } else Modifier),
         )
-        g.progress?.let {
-            Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                g.title.orEmpty(),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            g.author?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            val unread = g.unread
+            val info = when {
+                unread == null -> "книг на полке: ${g.lines.size}"
+                unread == 0 -> "всё прочитано"
+                else -> "не прочитано: $unread из ${g.total}"
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    info,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (unread != null && unread > 0) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (g.hasNew) {
+                    Text("  · новая книга", style = MaterialTheme.typography.labelSmall, color = Coral)
+                }
+            }
         }
+        Icon(
+            if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+            contentDescription = if (open) "Свернуть" else "Развернуть",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
