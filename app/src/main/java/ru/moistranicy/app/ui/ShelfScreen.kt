@@ -3,6 +3,14 @@
 package ru.moistranicy.app.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -96,6 +104,9 @@ private data class Group(
     val singles: Boolean = false,
     /** Корешки для постера цикла. */
     val spines: List<Spine> = emptyList(),
+    /** Группа «автор» (во вкладке «Прочитал» — книги вне циклов по авторам). */
+    val isAuthor: Boolean = false,
+    val authorPhoto: String? = null,
 )
 
 /**
@@ -170,6 +181,30 @@ private fun buildGroups(
     }.sortedBy { it.title }
     val singles = rest.filter { it.book.seriesName == null }
     val result = cycleGroups + seriesGroups
+    if (status == ReadStatus.READ && singles.isNotEmpty()) {
+        // «Прочитал»: книги вне циклов — по авторам (по первому автору книги)
+        val byAuthor = singles.groupBy { e ->
+            val a = e.book.authors.firstOrNull()
+            a?.id?.takeIf { it.startsWith("fl-") } ?: ("name:" + (a?.name ?: "Автор не указан"))
+        }
+        val authorGroups = byAuthor.map { (key, list) ->
+            val a = list.first().book.authors.firstOrNull()
+            Group(
+                key = "a:$key",
+                title = a?.name ?: "Автор не указан",
+                cycleId = null,
+                progress = null,
+                lines = list.sortedByDescending { it.finishedAt ?: it.updatedAt }.map { e ->
+                    Line(e.book.id, null, e.book.title, e.book.year, false, true)
+                },
+                hasNew = false,
+                isAuthor = true,
+                authorPhoto = a?.id?.takeIf { it.startsWith("fl-") }
+                    ?.let { "https://fantlab.ru/images/autors/${it.removePrefix("fl-")}" },
+            )
+        }.sortedWith(compareByDescending<Group> { it.lines.size }.thenBy { it.title })
+        return result + authorGroups
+    }
     return if (singles.isEmpty()) result else result + Group(
         key = "single",
         title = if (result.isEmpty()) null else "Вне циклов",
@@ -268,6 +303,19 @@ fun ShelfScreen(onBook: (String) -> Unit) {
                     }
                     groups.forEach { g ->
                         val open = !g.isSeries || ShelfUi.expanded[g.key] == true
+                        if (g.isAuthor) {
+                            val openA = ShelfUi.expanded[g.key] == true
+                            item(key = "h" + g.key) {
+                                AuthorGroupHeader(g, openA) { ShelfUi.expanded[g.key] = !openA }
+                            }
+                            if (openA) {
+                                items(g.lines, key = { g.key + "/" + it.id }) { l ->
+                                    val e = shelf[l.id]
+                                    if (e != null) ReadingRow(e, cycles) { onBook(l.id) }
+                                }
+                            }
+                            return@forEach
+                        }
                         if (g.isSeries) {
                             item(key = "h" + g.key) {
                                 SeriesHeader(g, open, onToggle = { ShelfUi.expanded[g.key] = !open }, onBook = onBook)
@@ -420,5 +468,52 @@ private fun ReadingRow(e: ShelfEntry, cycles: Map<String, TrackedCycle>, onClick
                 )
             }
         }
+    }
+}
+
+/** Заголовок автора во вкладке «Прочитал»: фото, имя, число книг, стрелка «раскрыть». */
+@Composable
+private fun AuthorGroupHeader(g: Group, open: Boolean, onToggle: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(52.dp).clip(CircleShape)
+                .background(Brush.linearGradient(listOf(Violet, VioletDeep))),
+            contentAlignment = Alignment.Center,
+        ) {
+            val initials = g.title.orEmpty().split(' ').filter { it.isNotEmpty() }.take(2)
+                .joinToString("") { it.take(1).uppercase() }
+            Text(initials, color = Color.White, fontWeight = FontWeight.Bold)
+            g.authorPhoto?.let {
+                AsyncImage(model = it, contentDescription = g.title, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                g.title.orEmpty(),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                "прочитано книг: ${g.lines.size}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        Text(
+            if (open) "Свернуть" else "Раскрыть",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Icon(
+            if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
