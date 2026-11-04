@@ -283,7 +283,7 @@ def op_push_shelf(uid, body):
             created_events += len(events)
     for part in chunks(deleted, 200):
         q("DELETE FROM shelf WHERE user_id = $u AND book_id IN $ids", {"$u": uid, "$ids": (part, LIST_U8)})
-    read = count("SELECT COUNT(*) AS c FROM shelf WHERE user_id = $u AND status = 'READ'", {"$u": uid})
+    read = count("SELECT COUNT(*) AS c FROM shelf WHERE user_id = $u AND status = 'READ'u", {"$u": uid})
     q("UPDATE users SET read_count = $c WHERE id = $id", {"$id": uid, "$c": read})
     return {"ok": True, "events": created_events}
 
@@ -295,7 +295,7 @@ def op_search(uid, body):
     rows = q(
         """SELECT id, name, login, avatar, is_public, read_count FROM users
            WHERE is_public AND id != $me
-             AND (Unicode::ToLower(COALESCE(name, "")) LIKE $p OR Unicode::ToLower(COALESCE(login, "")) LIKE $p)
+             AND (Unicode::ToLower(COALESCE(name, ""u)) LIKE $p OR Unicode::ToLower(COALESCE(login, ""u)) LIKE $p)
            ORDER BY read_count DESC LIMIT 30""",
         {"$me": uid, "$p": "%" + text + "%"},
     )
