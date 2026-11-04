@@ -1,0 +1,82 @@
+name: Deploy social backend
+on:
+  push:
+    branches: [ main ]
+    paths: [ 'backend/**', '.github/workflows/backend.yml' ]
+  workflow_dispatch:
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check secrets
+        env:
+          YC_SA_JSON: ${{ secrets.YC_SA_JSON }}
+        run: |
+          if [ -z "$YC_SA_JSON" ]; then
+            echo "::warning::Секреты Яндекс Облака не заданы (YC_SA_JSON, YC_FOLDER_ID) — развёртывание пропущено"
+            echo "SKIP=1" >> "$GITHUB_ENV"
+          fi
+      - name: Install yc CLI
+        if: env.SKIP != '1'
+        run: |
+          curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash -s -- -i /opt/yc -n
+          echo "/opt/yc/bin" >> "$GITHUB_PATH"
+      - name: Deploy
+        if: env.SKIP != '1'
+        env:
+          YC_SA_JSON: ${{ secrets.YC_SA_JSON }}
+          FOLDER: ${{ secrets.YC_FOLDER_ID }}
+        run: |
+          set -e
+          echo "$YC_SA_JSON" > /tmp/key.json
+          yc config set service-account-key /tmp/key.json
+          yc config set folder-id "$FOLDER"
+
+          # сервисный аккаунт, от имени которого работает функция (доступ к базе)
+          if ! yc iam service-account get moistranicy-fn >/dev/null 2>&1; then
+            yc iam service-account create --name moistranicy-fn
+          fi
+          SA_ID=$(yc iam service-account get moistranicy-fn --format json | jq -r .id)
+          yc resource-manager folder add-access-binding "$FOLDER" --role ydb.editor --subject serviceAccount:$SA_ID || true
+
+          # база данных YDB serverless
+          if ! yc ydb database get moistranicy >/dev/null 2>&1; then
+            yc ydb database create moistranicy --serverless
+          fi
+          for i in $(seq 1 30); do
+            STATUS=$(yc ydb database get moistranicy --format json | jq -r .status)
+            [ "$STATUS" = "RUNNING" ] && break
+            echo "База: $STATUS, ждём..."; sleep 10
+          done
+          DB_JSON=$(yc ydb database get moistranicy --format json)
+          ENDPOINT_FULL=$(echo "$DB_JSON" | jq -r .endpoint)
+          YDB_ENDPOINT="${ENDPOINT_FULL%%/?database=*}"
+          YDB_DATABASE="${ENDPOINT_FULL##*?database=}"
+          echo "YDB: $YDB_ENDPOINT $YDB_DATABASE"
+
+          # функция
+          if ! yc serverless function get moistranicy-api >/dev/null 2>&1; then
+            yc serverless function create --name moistranicy-api
+          fi
+          (cd backend && zip -qr /tmp/backend.zip .)
+          yc serverless function version create \
+            --function-name moistranicy-api \
+            --runtime python312 \
+            --entrypoint index.handler \
+            --memory 256m \
+            --execution-timeout 20s \
+            --source-path /tmp/backend.zip \
+            --service-account-id "$SA_ID" \
+            --environment YDB_ENDPOINT="$YDB_ENDPOINT",YDB_DATABASE="$YDB_DATABASE"
+          yc serverless function allow-unauthenticated-invoke moistranicy-api || true
+
+          FN_ID=$(yc serverless function get moistranicy-api --format json | jq -r .id)
+          URL="https://functions.yandexcloud.net/$FN_ID"
+          echo "SOCIAL_API_URL=$URL"
+          echo "### Адрес сервера: $URL" >> "$GITHUB_STEP_SUMMARY"
+
+          # проверка
+          sleep 5
+          curl -s -X POST "$URL" -H 'Content-Type: application/json' -d '{"op":"ping"}' || true
+          echo
