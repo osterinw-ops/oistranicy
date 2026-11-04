@@ -71,6 +71,16 @@ private suspend fun enrichGenres(read: List<ShelfEntry>) {
     }
 }
 
+private val TAG_STOP_WORDS = setOf("с", "и", "в", "во", "на", "о", "об", "для", "по", "из", "от", "до", "без", "про", "или", "а", "к", "со")
+
+/** Тег не длиннее двух слов: «фэнтези с элементами юмора» → «фэнтези». */
+private fun shortTag(tag: String): String {
+    val words = tag.trim().split(Regex("\\s+"))
+    if (words.size <= 2) return tag.trim()
+    val two = words.take(2)
+    return if (two[1] in TAG_STOP_WORDS) two[0] else two.joinToString(" ")
+}
+
 /** Раскладка облака: крупные слова чередуются с мелкими, пары — от центра к краям. */
 private fun <T> cloudOrder(sortedDesc: List<T>): List<T> {
     val zigzag = ArrayList<T>()
@@ -114,8 +124,8 @@ fun AuthorsCloudScreen(onAuthor: (String) -> Unit, onBook: (String) -> Unit) {
     // ---- теги: жанры прочитанных книг ----
     val tagWords = read.flatMap { e -> e.book.genres.map { it.trim().lowercase() to e.book.id } }
         .filter { it.first.isNotEmpty() }
-        // теги длиннее двух слов не показываем
-        .filter { it.first.split(Regex("\\s+")).size <= 2 }
+        // теги длиннее двух слов сокращаем до двух
+        .map { shortTag(it.first) to it.second }
         .groupBy { it.first }
         .map { (tag, list) -> CloudWord(tag, tag, list.map { it.second }.distinct().size, null, null) }
 
@@ -202,7 +212,7 @@ fun AuthorsCloudScreen(onAuthor: (String) -> Unit, onBook: (String) -> Unit) {
 
     val tag = tagSheet
     if (tag != null) {
-        val books = read.filter { e -> e.book.genres.any { it.trim().lowercase() == tag } }
+        val books = read.filter { e -> e.book.genres.any { shortTag(it.trim().lowercase()) == tag } }
             .sortedByDescending { it.finishedAt ?: 0 }
         ModalBottomSheet(onDismissRequest = { tagSheet = null }) {
             Column(Modifier.padding(bottom = 24.dp)) {
