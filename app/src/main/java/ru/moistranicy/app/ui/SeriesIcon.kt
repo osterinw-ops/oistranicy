@@ -3,6 +3,17 @@ package ru.moistranicy.app.ui
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.material3.Text
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -79,6 +90,91 @@ fun SeriesIcon(genres: List<String>, title: String, modifier: Modifier = Modifie
                 .padding(end = 9.dp)
                 .offset(y = 0.dp)
                 .size(width = 6.dp, height = 11.dp)
+                .clip(RoundedCornerShape(bottomStart = 1.dp, bottomEnd = 1.dp))
+                .background(Coral),
+        )
+    }
+}
+
+/** Палитры постеров (на основе цветов логотипа), выбираются по названию серии. */
+private val POSTER_GRADIENTS = listOf(
+    listOf(Color(0xFF7B6CF6), Color(0xFF2A1F7A)),
+    listOf(Color(0xFF5B4BDB), Color(0xFF1B1347)),
+    listOf(Color(0xFFFF7A59), Color(0xFF7A2A6E)),
+    listOf(Color(0xFF9D91FF), Color(0xFF3A2D9C)),
+    listOf(Color(0xFF3A2D9C), Color(0xFFB8401F)),
+)
+
+/**
+ * Постер серии: настоящая картинка (обложка цикла или первой книги) с затемнением
+ * и подписью внизу. Если картинки нет — постер рисуется: градиент, крупный символ
+ * жанра и название серии.
+ */
+@Composable
+fun SeriesPoster(
+    imageUrl: String?,
+    genres: List<String>,
+    title: String,
+    books: Int?,
+    modifier: Modifier = Modifier,
+) {
+    val grad = POSTER_GRADIENTS[(title.hashCode() and 0x7fffffff) % POSTER_GRADIENTS.size]
+    Box(
+        modifier
+            .size(width = 64.dp, height = 96.dp)
+            .shadow(3.dp, RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(8.dp))
+            .background(Brush.linearGradient(grad)),
+    ) {
+        // рисованный постер (виден, если картинки нет или она не загрузилась)
+        Icon(
+            painterResource(themeIconFor(genres)),
+            contentDescription = null,
+            tint = Color.White.copy(alpha = 0.22f),
+            modifier = Modifier.size(58.dp).align(Alignment.TopCenter).offset(y = 6.dp),
+        )
+        Text(
+            title,
+            color = Color.White,
+            fontSize = 9.sp,
+            lineHeight = 10.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.align(Alignment.Center).padding(horizontal = 4.dp).offset(y = 14.dp),
+        )
+        if (imageUrl != null) {
+            AsyncImage(
+                model = imageUrl,
+                contentDescription = title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        // затемнение и число книг внизу, как на афише
+        Box(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(26.dp)
+                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f)))),
+        )
+        if (books != null && books > 0) {
+            Text(
+                "$books кн.",
+                color = Color.White,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 3.dp),
+            )
+        }
+        // закладка, как на логотипе
+        Box(
+            Modifier
+                .align(Alignment.TopEnd)
+                .padding(end = 8.dp)
+                .size(width = 6.dp, height = 12.dp)
                 .clip(RoundedCornerShape(bottomStart = 1.dp, bottomEnd = 1.dp))
                 .background(Coral),
         )

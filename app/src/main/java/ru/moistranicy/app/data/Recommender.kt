@@ -4,9 +4,8 @@ import java.util.Locale
 
 /**
  * Подбор рекомендаций по полке пользователя:
- *  1) следующая книга начатых циклов;
- *  2) похожие (по FantLab) на книги с высокой оценкой;
- *  3) лучшие непрочитанные книги любимых авторов.
+ *  1) похожие (по FantLab) на прочитанные книги с высокой оценкой;
+ *  2) лучшие непрочитанные книги любимых авторов.
  * Книги, уже стоящие на полке, не предлагаются.
  */
 object Recommender {
@@ -27,25 +26,10 @@ object Recommender {
             if (old == null || old.score < r.score) out[b.id] = r
         }
 
-        // 1. Продолжение начатых циклов
-        for (c in CycleRepository.cycles.value.values) {
-            if (c.dropped) continue
-            val published = c.books.filter { it.published }
-            val readCount = published.count { shelf[it.id]?.status == ReadStatus.READ }
-            if (readCount == 0) continue
-            val next = published.firstOrNull { shelf[it.id] == null } ?: continue
-            val n = published.indexOf(next) + 1
-            offer(
-                Recommendation(
-                    CycleRepository.bookOf(c, next).let { it.copy(coverUrl = it.coverUrl ?: next.coverUrl) },
-                    "Следующая, ${n}-я книга цикла «${c.name}» — вы прочитали $readCount из ${published.size}",
-                    100.0 + readCount,
-                ),
-            )
-        }
-
-        // 2. Похожие на понравившиеся
-        val liked = read.filter { it.book.id.startsWith("fl-") }
+        // 1. Похожие на прочитанные и высоко оценённые
+        val fl = read.filter { it.book.id.startsWith("fl-") }
+        val high = fl.filter { (it.rating ?: 0) >= 8 }
+        val liked = high.ifEmpty { fl.filter { (it.rating ?: 0) >= 7 } }.ifEmpty { fl }
             .sortedWith(compareByDescending<ShelfEntry> { it.rating ?: 0 }.thenByDescending { it.finishedAt ?: 0 })
             .take(8)
         for (e in liked) {
@@ -64,7 +48,7 @@ object Recommender {
             }
         }
 
-        // 3. Любимые авторы
+        // 2. Любимые авторы
         val favAuthors = read.flatMap { e -> e.book.authors.filter { it.id?.startsWith("fl-") == true } }
             .groupBy { it.id!! }
             .entries.sortedByDescending { it.value.size }

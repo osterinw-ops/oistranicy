@@ -90,6 +90,8 @@ private data class Group(
     val tracked: Boolean = false,
     val genres: List<String> = emptyList(),
     val dropped: Boolean = false,
+    val posterUrl: String? = null,
+    val bookCount: Int? = null,
 )
 
 /**
@@ -123,6 +125,10 @@ private fun buildGroups(
                 author = c.authors.joinToString(", ") { it.name }.ifEmpty { null },
                 unread = published.size - read, total = published.size, tracked = true,
                 genres = c.genres, dropped = c.dropped,
+                // своя картинка цикла на FantLab (обложка сборника), иначе — обложка первой книги
+                posterUrl = c.coverUrl?.takeIf { it.contains("/images/editions/") }
+                    ?: c.books.firstOrNull { it.published && it.coverUrl != null }?.coverUrl,
+                bookCount = published.size,
             )
         }
     }
@@ -145,6 +151,7 @@ private fun buildGroups(
             covers = list.mapNotNull { it.book.coverUrl }.take(3),
             author = b0.authorsLine.ifEmpty { null },
             genres = list.flatMap { it.book.genres }.distinct(),
+            posterUrl = list.firstNotNullOfOrNull { it.book.coverUrl },
         )
     }.sortedBy { it.title }
     val singles = rest.filter { it.book.seriesName == null }
@@ -261,7 +268,7 @@ fun ShelfScreen(onBook: (String) -> Unit) {
                                     sub = l.sub,
                                     isNew = l.isNew,
                                     published = l.published,
-                                    indent = if (g.isSeries) 84 else 16,
+                                    indent = if (g.isSeries) 92 else 16,
                                 ) { onBook(l.id) }
                             }
                         }
@@ -286,10 +293,12 @@ private fun SeriesHeader(g: Group, open: Boolean, onToggle: () -> Unit, onBook: 
             .padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SeriesIcon(
-            g.genres,
-            g.title.orEmpty(),
-            Modifier.then(if (cid != null) Modifier.clickable { onBook(cid) } else Modifier),
+        SeriesPoster(
+            imageUrl = g.posterUrl,
+            genres = g.genres,
+            title = g.title.orEmpty(),
+            books = g.bookCount,
+            modifier = Modifier.then(if (cid != null) Modifier.clickable { onBook(cid) } else Modifier),
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
