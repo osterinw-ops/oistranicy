@@ -61,6 +61,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import ru.moistranicy.app.data.Book
 import ru.moistranicy.app.data.CycleRepository
+import ru.moistranicy.app.data.ExternalSources
 import ru.moistranicy.app.data.BookCache
 import ru.moistranicy.app.data.FantLab
 import ru.moistranicy.app.data.ReadStatus
@@ -322,10 +323,7 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
             }
 
             Spacer(Modifier.height(16.dp))
-            TextButton(onClick = {
-                val q = (book.title + " " + (book.authors.firstOrNull()?.name ?: "")).trim()
-                uri.openUri("https://www.livelib.ru/find/books/" + Uri.encode(q))
-            }) { Text("Найти на LiveLib →") }
+            ExternalSourcesRow(ExternalSources.queryFor(book), "Найти книгу:")
 
             followError?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)

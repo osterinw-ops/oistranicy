@@ -2,6 +2,8 @@ package ru.moistranicy.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -336,6 +338,35 @@ fun SeriesCollage(covers: List<String>, title: String, modifier: Modifier = Modi
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+    }
+}
+
+/** Ряд мелких ссылок «Искать в ЛитРес / Яндекс Книгах / …». */
+@Composable
+fun ExternalSourcesRow(query: String, label: String, modifier: Modifier = Modifier) {
+    val uri = androidx.compose.ui.platform.LocalUriHandler.current
+    Column(modifier) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(top = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            ru.moistranicy.app.data.ExternalSources.all.forEach { src ->
+                Text(
+                    src.name,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+                        .clickable { runCatching { uri.openUri(src.url(query)) } }
+                        .padding(horizontal = 10.dp, vertical = 5.dp),
                 )
             }
         }

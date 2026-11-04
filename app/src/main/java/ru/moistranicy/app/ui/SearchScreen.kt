@@ -155,6 +155,13 @@ fun SearchScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit) {
                     )
                 }
             }
+            if (SearchHolder.query.trim().length >= 2) {
+                ExternalSourcesRow(
+                    SearchHolder.query,
+                    "Искать также:",
+                    Modifier.padding(start = 16.dp, end = 16.dp, bottom = 6.dp),
+                )
+            }
             when (SearchHolder.mode) {
                 SearchMode.WORKS -> BookResults(SearchHolder.works, ::run, onBook)
                 SearchMode.GOOGLE -> BookResults(SearchHolder.google, ::run, onBook)
