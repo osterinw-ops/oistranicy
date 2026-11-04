@@ -12,10 +12,20 @@ android {
         applicationId "ru.moistranicy.app"
         minSdk 26
         targetSdk 35
-        versionCode 4
-        versionName "0.4"
+        // номер версии растёт с каждой сборкой в GitHub Actions — обновление ставится поверх
+        def run = System.getenv("GITHUB_RUN_NUMBER")
+        versionCode run != null ? 100 + run.toInteger() : 4
+        versionName "0.4" + (run != null ? "." + run : "")
     }
     signingConfigs {
+        // постоянный отладочный ключ из репозитория: без него GitHub каждый раз
+        // создаёт новый, и обновление не ставится поверх («конфликт с пакетом»)
+        debug {
+            storeFile file("debug.keystore")
+            storePassword "android"
+            keyAlias "androiddebugkey"
+            keyPassword "android"
+        }
         release {
             def ks = System.getenv("KEYSTORE_FILE")
             if (ks != null && !ks.isEmpty()) {
