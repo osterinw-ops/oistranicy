@@ -149,9 +149,9 @@ object CycleRepository {
         return result
     }
 
-    /** Обложки для коллажа цикла: до трёх первых вышедших книг. */
+    /** Обложки для коллажа цикла: до пяти первых вышедших книг. */
     fun collageCovers(c: TrackedCycle): List<String> =
-        c.books.filter { it.published }.mapNotNull { it.coverUrl }.take(3)
+        c.books.filter { it.published }.mapNotNull { it.coverUrl }.take(5)
             .ifEmpty { listOfNotNull(c.coverUrl) }
 
     /** Запомнить обложку книги, если она входит в отслеживаемые циклы. */
@@ -174,7 +174,7 @@ object CycleRepository {
     /** Догрузить обложки первых трёх книг цикла с FantLab (один раз). */
     suspend fun ensureCovers(cycleId: String) {
         val c = get(cycleId) ?: return
-        val first = c.books.filter { it.published }.take(3)
+        val first = c.books.filter { it.published }.take(5)
         val need = first.filter { it.coverUrl == null || c.genres.isEmpty() }
         if (need.isEmpty()) return
         synchronized(coverJobs) {

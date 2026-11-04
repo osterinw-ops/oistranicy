@@ -320,9 +320,11 @@ private fun SeriesHeader(g: Group, open: Boolean, onToggle: () -> Unit, onBook: 
             .padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SeriesShelfPoster(
+        SeriesCollagePoster(
             title = g.title.orEmpty(),
-            spines = g.spines,
+            covers = g.covers,
+            genres = g.genres,
+            caption = g.total?.let { t -> "${t - (g.unread ?: 0)} из $t" },
             modifier = Modifier.then(if (cid != null) Modifier.clickable { onBook(cid) } else Modifier),
         )
         Spacer(Modifier.width(12.dp))

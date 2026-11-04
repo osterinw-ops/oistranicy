@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Text
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -363,5 +365,101 @@ fun SeriesShelfPoster(title: String, spines: List<Spine>, modifier: Modifier = M
             modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
             textAlign = TextAlign.Center,
         )
+    }
+}
+
+/**
+ * Горизонтальный постер цикла — коллаж из обложек его книг:
+ * размытый фон из первой обложки, поверх — обложки книг по порядку веером внахлёст,
+ * внизу название и прогресс. Без обложек — фирменная плашка с символом жанра.
+ */
+@Composable
+fun SeriesCollagePoster(
+    title: String,
+    covers: List<String>,
+    genres: List<String>,
+    caption: String?,
+    modifier: Modifier = Modifier,
+) {
+    val grad = POSTER_GRADIENTS[(title.hashCode() and 0x7fffffff) % POSTER_GRADIENTS.size]
+    val w = 140.dp
+    val h = 86.dp
+    Box(
+        modifier
+            .size(width = w, height = h)
+            .shadow(3.dp, RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(8.dp))
+            .background(Brush.linearGradient(grad)),
+    ) {
+        if (covers.isEmpty()) {
+            Icon(
+                painterResource(themeIconFor(genres)),
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.25f),
+                modifier = Modifier.size(70.dp).align(Alignment.CenterEnd).offset(x = 6.dp),
+            )
+        } else {
+            // фон: первая обложка, размытая и затемнённая
+            AsyncImage(
+                model = covers.first(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().blur(8.dp),
+            )
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)))
+            // обложки веером внахлёст по всей ширине
+            val n = covers.size
+            val coverW = 42.dp
+            val coverH = 62.dp
+            val step = if (n <= 1) 0.dp else ((w - coverW - 12.dp) / (n - 1)).coerceAtMost(30.dp)
+            val totalW = coverW + step * (n - 1)
+            val startX = (w - totalW) / 2
+            covers.forEachIndexed { i, url ->
+                val mid = (n - 1) / 2f
+                val angle = if (n == 1) 0f else (i - mid) * 4f
+                Box(
+                    Modifier
+                        .offset(x = startX + step * i, y = 5.dp + (kotlin.math.abs(i - mid) * 2).dp)
+                        .rotate(angle)
+                        .size(width = coverW, height = coverH)
+                        .shadow(4.dp, RoundedCornerShape(3.dp))
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(Color(0xFF2A2638)),
+                ) {
+                    AsyncImage(
+                        model = url,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+            }
+        }
+        // подпись: название цикла и прогресс
+        Box(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(30.dp)
+                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)))),
+        )
+        androidx.compose.foundation.layout.Row(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 6.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                title.uppercase(),
+                color = Color.White,
+                fontSize = 8.sp,
+                lineHeight = 9.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            if (caption != null) {
+                Text(caption, color = Coral, fontSize = 7.sp, lineHeight = 8.sp, fontWeight = FontWeight.Bold)
+            }
+        }
     }
 }
