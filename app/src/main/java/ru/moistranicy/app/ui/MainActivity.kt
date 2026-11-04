@@ -8,7 +8,6 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.runtime.LaunchedEffect
@@ -18,6 +17,7 @@ import androidx.compose.ui.platform.LocalContext
 import ru.moistranicy.app.data.CycleCheckWorker
 import ru.moistranicy.app.data.CycleRepository
 import ru.moistranicy.app.data.Notifier
+import ru.moistranicy.app.data.ReadStatus
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -77,7 +77,6 @@ private data class Tab(val route: String, val label: String, val icon: ImageVect
 
 private val tabs = listOf(
     Tab("shelf", "Полка", Icons.Filled.Home),
-    Tab("cycles", "Циклы", Icons.AutoMirrored.Filled.List),
     Tab("search", "Поиск", Icons.Filled.Search),
     Tab("profile", "Профиль", Icons.Filled.Person),
 )
@@ -101,7 +100,10 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
     }
 
     LaunchedEffect(openRequest) {
-        if (openRequest == "cycles") goTab("cycles")
+        if (openRequest == "cycles") {
+            ShelfUi.tab = ReadStatus.WANT.ordinal
+            goTab("shelf")
+        }
         if (openRequest != null) onOpenHandled()
     }
 
@@ -123,7 +125,7 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
                         selected = route == t.route,
                         onClick = { goTab(t.route) },
                         icon = {
-                            if (t.route == "cycles" && newCount > 0) {
+                            if (t.route == "shelf" && newCount > 0) {
                                 BadgedBox(badge = { Badge { Text("$newCount") } }) { Icon(t.icon, contentDescription = null) }
                             } else {
                                 Icon(t.icon, contentDescription = null)
@@ -137,7 +139,6 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
     ) { pad ->
         NavHost(nav, startDestination = "shelf", modifier = Modifier.padding(pad)) {
             composable("shelf") { ShelfScreen(onBook = { nav.openBook(it) }) }
-            composable("cycles") { CyclesScreen(onBook = { nav.openBook(it) }) }
             composable("search") {
                 SearchScreen(onBook = { nav.openBook(it) }, onAuthor = { nav.openAuthor(it) })
             }

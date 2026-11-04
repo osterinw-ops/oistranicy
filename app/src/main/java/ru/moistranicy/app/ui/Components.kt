@@ -224,3 +224,70 @@ fun Loading() {
 
 fun errorText(e: Throwable): String =
     "Не удалось загрузить данные.\n${e.message ?: e.javaClass.simpleName}\n\nПроверьте подключение к интернету."
+
+@Composable
+fun statusColor(status: ReadStatus): Color = when (status) {
+    ReadStatus.READING -> MaterialTheme.colorScheme.primary
+    ReadStatus.WANT -> Color(0xFF4FB3E8)
+    ReadStatus.READ -> Color(0xFF4CC38A)
+    ReadStatus.DROPPED -> Color(0xFF9A93B5)
+}
+
+/**
+ * Компактная строка книги: «3. Название» и мелкая подпись.
+ * Невышедшие книги — бледным шрифтом.
+ */
+@Composable
+fun CompactBookLine(
+    number: Int?,
+    title: String,
+    sub: String?,
+    status: ReadStatus? = null,
+    isNew: Boolean = false,
+    published: Boolean = true,
+    indent: Int = 16,
+    onClick: () -> Unit,
+) {
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(start = indent.dp, end = 16.dp, top = 3.dp, bottom = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (number != null) {
+            Text(
+                "$number.",
+                modifier = Modifier.width(24.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = muted.copy(alpha = if (published) 1f else 0.5f),
+            )
+        }
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (published) onSurface else onSurface.copy(alpha = 0.4f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (!sub.isNullOrEmpty()) {
+                Text(
+                    sub,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = muted.copy(alpha = if (published) 0.9f else 0.45f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        if (isNew) {
+            Text(" новая", style = MaterialTheme.typography.labelSmall, color = Coral)
+        }
+        if (status != null) {
+            Text(" " + status.title.lowercase(), style = MaterialTheme.typography.labelSmall, color = statusColor(status))
+        }
+    }
+}

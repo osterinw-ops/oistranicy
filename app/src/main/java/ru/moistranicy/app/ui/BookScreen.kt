@@ -353,7 +353,7 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                 val total = sheetCycle.books.count { it.published }
                 val read = sheetCycle.books.count { it.published && shelf[it.id]?.status == ReadStatus.READ }
                 Text(
-                    "Прочитано $read из $total. Цикл добавлен во вкладку «Циклы» — " +
+                    "Прочитано $read из $total. Остальные книги цикла — в «Полка → Хочу прочитать», " +
                         "о новых книгах придёт уведомление.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -373,9 +373,17 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                     Spacer(Modifier.height(6.dp))
                     Column(Modifier.verticalScroll(rememberScrollState())) {
                         rest.forEach { (i, b) ->
-                            CycleBookRow(sheetCycle, i + 1, b, shelf[b.id], isNew = b.id in sheetCycle.newIds) {
+                            CompactBookLine(
+                                number = i + 1,
+                                title = b.title,
+                                sub = listOfNotNull(b.year, if (!b.published) "ожидается" else null).joinToString(", "),
+                                status = shelf[b.id]?.status,
+                                isNew = b.id in sheetCycle.newIds,
+                                published = b.published,
+                                indent = 0,
+                            ) {
                                 sheetCycleId = null
-                                onBook(it)
+                                onBook(b.id)
                             }
                         }
                     }

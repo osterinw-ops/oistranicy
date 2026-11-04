@@ -193,7 +193,11 @@ object FantLab {
         val o = JSONObject(Http.get("$API/autor/$num?biblio_blocks=1"))
         val sections = mutableListOf<AuthorSection>()
         sections += cycleSections(o.opt("cycles_blocks"))
-        sections += blocks(o.opt("works_blocks"))
+        // книги, уже показанные внутри циклов, ниже не дублируем
+        val inCycles = sections.flatMap { s -> s.books.map { it.id } }.toHashSet()
+        sections += blocks(o.opt("works_blocks")).map { s ->
+            s.copy(books = s.books.filter { it.id !in inCycles })
+        }
         val years = listOf(o.str("birthday"), o.str("deathday"))
             .map { it.take(4) }.filter { it.length == 4 && it != "0000" }.joinToString("–")
         AuthorDetails(

@@ -17,6 +17,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.collectAsState
 import ru.moistranicy.app.data.Book
 import ru.moistranicy.app.data.CycleRepository
@@ -102,11 +106,14 @@ fun AuthorScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit) {
 private fun AuthorContent(d: AuthorDetails, onBook: (String) -> Unit) {
     val shelf by ShelfRepository.entries.collectAsState()
     val tracked by CycleRepository.cycles.collectAsState()
+    // все циклы изначально свёрнуты
+    val expanded = remember(d.id) { mutableStateMapOf<String, Boolean>() }
+
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
         item {
             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    Modifier.size(84.dp).clip(RoundedCornerShape(42.dp))
+                    Modifier.size(72.dp).clip(RoundedCornerShape(36.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant),
                 ) {
                     if (d.imageUrl != null) {
@@ -118,14 +125,14 @@ private fun AuthorContent(d: AuthorDetails, onBook: (String) -> Unit) {
                         )
                     }
                 }
-                Spacer(Modifier.width(16.dp))
+                Spacer(Modifier.width(14.dp))
                 Column {
-                    Text(d.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(d.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     if (d.nameOrig.isNotEmpty() && d.nameOrig != d.name) {
-                        Text(d.nameOrig, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(d.nameOrig, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     if (d.years.isNotEmpty()) {
-                        Text(d.years, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(d.years, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -133,67 +140,92 @@ private fun AuthorContent(d: AuthorDetails, onBook: (String) -> Unit) {
         if (d.sections.isEmpty()) {
             item { CenterMessage("Библиография пока недоступна") }
         }
-        d.sections.forEach { s ->
-            val cid = s.cycleId
-            item {
+
+        val cycleSections = d.sections.filter { it.cycleId != null }
+        if (cycleSections.isNotEmpty()) {
+            item { SectionTitle("Циклы") }
+        }
+        cycleSections.forEach { s ->
+            val cid = s.cycleId!!
+            val open = expanded[cid] == true
+            val published = s.books.filter { it.published }
+            val read = published.count { shelf[it.id]?.status == ReadStatus.READ }
+            item(key = "c$cid") {
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .then(if (cid != null) Modifier.clickable { onBook(cid) } else Modifier)
-                        .padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 4.dp),
+                        .clickable { expanded[cid] = !open }
+                        .padding(start = 12.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    Icon(
+                        if (open) Icons.Filled.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = if (open) "Свернуть" else "Развернуть",
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.width(4.dp))
                     Text(
                         s.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = if (cid != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
                     )
-                    if (cid != null && tracked.containsKey(cid)) {
-                        Text("✓ слежу", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                    Text(
+                        (if (tracked.containsKey(cid)) "✓ " else "") +
+                            (if (read > 0) "$read из ${published.size}" else "${published.size} кн."),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (tracked.containsKey(cid)) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    // открыть страницу цикла (следить, описание)
+                    IconButton(onClick = { onBook(cid) }, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            Icons.Filled.Info,
+                            contentDescription = "О цикле",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             }
-            if (cid != null) {
-                itemsIndexed(s.books) { i, b ->
-                    NumberedBookRow(i + 1, b, shelf[b.id]?.status) { onBook(b.id) }
+            if (open) {
+                itemsIndexed(s.books, key = { _, b -> "c$cid/${b.id}" }) { i, b ->
+                    CompactBookLine(
+                        number = i + 1,
+                        title = b.title,
+                        sub = listOfNotNull(b.year, if (!b.published) "ожидается" else null).joinToString(", "),
+                        status = shelf[b.id]?.status,
+                        published = b.published,
+                        indent = 36,
+                    ) { onBook(b.id) }
                 }
-            } else {
-                items(s.books) { b ->
-                    BookRow(b) { onBook(b.id) }
-                    RowDivider()
-                }
+            }
+        }
+
+        d.sections.filter { it.cycleId == null && it.books.isNotEmpty() }.forEachIndexed { si, s ->
+            item(key = "s$si") { SectionTitle(s.title) }
+            itemsIndexed(s.books, key = { i, _ -> "s$si/$i" }) { _, b ->
+                CompactBookLine(
+                    number = null,
+                    title = b.title,
+                    sub = listOfNotNull(b.workType, b.year, if (!b.published) "в планах" else null).joinToString(", "),
+                    status = shelf[b.id]?.status,
+                    published = b.published,
+                ) { onBook(b.id) }
             }
         }
     }
 }
 
-/** Строка «1. Название (год)» — как в библиографии на сайтах. */
 @Composable
-private fun NumberedBookRow(n: Int, b: Book, status: ReadStatus?, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 7.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("$n.", modifier = Modifier.width(30.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(
-            buildString {
-                append(b.title)
-                b.year?.let { append(" ($it)") }
-                if (!b.published) append(" — ожидается")
-            },
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.bodyLarge,
-            color = when {
-                status == ReadStatus.READ -> MaterialTheme.colorScheme.onSurfaceVariant
-                !b.published -> MaterialTheme.colorScheme.onSurfaceVariant
-                else -> MaterialTheme.colorScheme.primary
-            },
-        )
-        if (status != null) {
-            Spacer(Modifier.width(8.dp))
-            StatusBadge(status)
-        }
-    }
+private fun SectionTitle(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp),
+    )
 }
