@@ -53,7 +53,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.net.Uri
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Button
 import androidx.compose.runtime.rememberCoroutineScope
@@ -308,27 +311,21 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                 Spacer(Modifier.height(12.dp))
                 Text("Моя оценка", style = MaterialTheme.typography.titleSmall)
                 Spacer(Modifier.height(6.dp))
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    val myRating = entry.rating
-                    (1..10).forEach { n ->
-                        val selected = myRating != null && n <= myRating
-                        Box(
-                            Modifier
-                                .size(30.dp)
-                                .clip(CircleShape)
-                                .background(if (selected) Coral else MaterialTheme.colorScheme.surfaceVariant)
-                                .clickable { ShelfRepository.setRating(id, if (myRating == n) null else n) },
-                            contentAlignment = Alignment.Center,
-                        ) {
+                val myRating = entry.rating ?: 0
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    StarRating(myRating, onChange = { ShelfRepository.setRating(id, it) }, starSize = 32.dp, spacing = 2.dp)
+                    Spacer(Modifier.width(10.dp))
+                    if (myRating > 0) {
+                        Column {
+                            Text("$myRating / 10", color = Coral, fontWeight = FontWeight.Bold)
                             Text(
-                                "$n",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                ratingLabel(myRating),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                        }
+                        IconButton(onClick = { ShelfRepository.setRating(id, null) }) {
+                            Icon(Icons.Filled.Close, "Сбросить оценку", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                         }
                     }
                 }
@@ -402,52 +399,62 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
     }
 
     if (rateDialog && book != null) {
-        val current = shelf[id]?.rating
-        AlertDialog(
-            onDismissRequest = { closeRating() },
-            title = { Text("Как вам книга?") },
-            text = {
-                Column {
-                    Text(
-                        "«${book.title}»",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.height(14.dp))
-                    listOf(1..5, 6..10).forEach { range ->
-                        Row(
-                            Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                        ) {
-                            range.forEach { n ->
-                                val sel = current != null && n <= current
-                                Box(
-                                    Modifier
-                                        .size(42.dp)
-                                        .clip(CircleShape)
-                                        .background(if (sel) Coral else MaterialTheme.colorScheme.surfaceVariant)
-                                        .clickable {
-                                            ShelfRepository.setRating(id, n)
-                                            closeRating()
-                                        },
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Text(
-                                        "$n",
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (sel) Color.White else MaterialTheme.colorScheme.onSurface,
-                                    )
-                                }
-                            }
+        var pick by remember(id) { mutableIntStateOf(shelf[id]?.rating ?: 0) }
+        ModalBottomSheet(onDismissRequest = { closeRating() }, containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+            Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 20.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    BookCover(book, Modifier.width(52.dp), corner = 5.dp)
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(book.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        if (book.authors.isNotEmpty()) {
+                            Text(book.authorsLine, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, maxLines = 1)
                         }
+                        Text("Вы прочитали книгу 🎉", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-            },
-            confirmButton = {},
-            dismissButton = { TextButton(onClick = { closeRating() }) { Text("Пропустить") } },
-        )
+                Spacer(Modifier.height(20.dp))
+                StarRating(pick, onChange = { pick = it }, starSize = 46.dp, spacing = 6.dp, modifier = Modifier.align(Alignment.CenterHorizontally))
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.align(Alignment.CenterHorizontally), verticalAlignment = Alignment.Bottom) {
+                    if (pick > 0) {
+                        Text("$pick", color = Coral, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
+                        Text(" / 10 · ${ratingLabel(pick)}", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 4.dp))
+                    } else {
+                        Text("Нажмите на звёзды — каждая половинка это балл", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                Spacer(Modifier.height(20.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(
+                        onClick = { closeRating() },
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        shape = RoundedCornerShape(14.dp),
+                    ) { Text("Позже") }
+                    Box(
+                        Modifier
+                            .weight(2f)
+                            .height(48.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(
+                                if (pick > 0) Brush.horizontalGradient(listOf(Violet, VioletDeep))
+                                else Brush.horizontalGradient(listOf(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.surfaceVariant)),
+                            )
+                            .clickable(enabled = pick > 0) {
+                                ShelfRepository.setRating(id, pick)
+                                closeRating()
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            "Сохранить",
+                            color = if (pick > 0) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+            }
+        }
     }
 
     val sheetId = sheetCycleId
