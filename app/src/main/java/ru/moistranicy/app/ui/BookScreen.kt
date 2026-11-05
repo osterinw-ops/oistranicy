@@ -524,6 +524,30 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                // книгу отметили прочитанной, а предыдущие — нет: предлагаем отметить их разом, без оценок
+                val position = sheetCycle.books.indexOfFirst { it.id == id }
+                val previous = if (position > 0 && shelf[id]?.status == ReadStatus.READ) {
+                    sheetCycle.books.take(position).filter { b ->
+                        val st = shelf[b.id]?.status
+                        b.published && st != ReadStatus.READ && st != ReadStatus.DROPPED
+                    }
+                } else emptyList()
+                if (previous.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    Button(
+                        onClick = {
+                            previous.forEach { b ->
+                                ShelfRepository.setStatus(CycleRepository.bookOf(sheetCycle, b), ReadStatus.READ, knownDate = false)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Отметить предыдущие книги прочитанными (${previous.size})") }
+                    Text(
+                        "Оценки ставить не будем.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Spacer(Modifier.height(12.dp))
                 if (rest.isEmpty()) {
                     if (total > 0 && read == total) {

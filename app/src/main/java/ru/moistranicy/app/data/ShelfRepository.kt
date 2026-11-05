@@ -33,7 +33,8 @@ object ShelfRepository {
 
     fun get(id: String): ShelfEntry? = _entries.value[id]
 
-    fun setStatus(book: Book, status: ReadStatus) {
+    /** knownDate = false — книга прочитана когда-то раньше: дату не ставим (не идёт в годовой вызов). */
+    fun setStatus(book: Book, status: ReadStatus, knownDate: Boolean = true) {
         val now = System.currentTimeMillis()
         val old = _entries.value[book.id]
         val entry = ShelfEntry(
@@ -42,8 +43,8 @@ object ShelfRepository {
             rating = old?.rating,
             addedAt = old?.addedAt ?: now,
             updatedAt = now,
-            startedAt = old?.startedAt ?: if (status == ReadStatus.READING || status == ReadStatus.READ) now else null,
-            finishedAt = if (status == ReadStatus.READ) (old?.finishedAt ?: now) else old?.finishedAt,
+            startedAt = old?.startedAt ?: if (knownDate && (status == ReadStatus.READING || status == ReadStatus.READ)) now else null,
+            finishedAt = if (knownDate && status == ReadStatus.READ) (old?.finishedAt ?: now) else old?.finishedAt,
         )
         synchronized(deleted) { deleted.remove(book.id) }
         update(_entries.value + (book.id to entry))
