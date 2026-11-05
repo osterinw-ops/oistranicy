@@ -72,6 +72,10 @@ fun AuthorScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit) {
             val d = FantLab.author(id)
             AuthorCache.map[id] = d
             details = d
+            // составные романы группируем уже после показа: нужны дополнительные запросы
+            val grouped = FantLab.groupNovelParts(d)
+            AuthorCache.map[id] = grouped
+            details = grouped
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

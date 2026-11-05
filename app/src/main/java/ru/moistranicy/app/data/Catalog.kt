@@ -2,6 +2,9 @@ package ru.moistranicy.app.data
 
 import android.text.Html
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -209,6 +212,41 @@ object FantLab {
             years = years,
             sections = sections.filter { it.books.isNotEmpty() },
             nameGenitive = o.str("name_rp").ifEmpty { o.str("name").ifEmpty { o.str("name_orig") } },
+        )
+    }
+
+    /**
+     * Роман из частей, которые FantLab показывает ещё и отдельными повестями
+     * («Яр(к)ость», «Чудо(вище)» → «(Бес)человечность»): такой роман становится разделом
+     * как цикл, а его части больше не дублируются в библиографии.
+     */
+    suspend fun groupNovelParts(d: AuthorDetails): AuthorDetails = withContext(Dispatchers.IO) {
+        val plain = d.sections.filter { it.cycleId == null }
+        val works = plain.flatMap { it.books }.filter { !it.isCycle }.distinctBy { it.id }
+        fun isNovel(b: Book) = b.workType?.contains("роман", ignoreCase = true) == true
+        val novels = works.filter { isNovel(it) }
+        val others = works.filter { !isNovel(it) && !isMinor(it.workType) }
+        if (novels.isEmpty() || others.isEmpty()) return@withContext d
+        val otherIds = others.map { it.id }.toSet()
+        // часть не может выйти позже всего романа: старые романы проверять незачем
+        val minYear = others.mapNotNull { it.year?.toIntOrNull() }.minOrNull() ?: 0
+        val candidates = novels
+            .filter { (it.year?.toIntOrNull() ?: Int.MAX_VALUE) >= minYear }
+            .sortedByDescending { it.year?.toIntOrNull() ?: Int.MAX_VALUE }
+            .take(12)
+        val found = candidates.chunked(4).flatMap { part ->
+            coroutineScope {
+                part.map { n -> async { n to runCatching { work(n.id) }.getOrNull() } }.awaitAll()
+            }
+        }.mapNotNull { (novel, details) ->
+            val parts = details?.let { cycleBooks(it.children) }?.map { it.book }.orEmpty()
+            if (parts.size >= 2 && parts.any { it.id in otherIds }) AuthorSection(novel.title, parts, novel.id) else null
+        }
+        if (found.isEmpty()) return@withContext d
+        val moved = found.flatMap { s -> s.books.map { it.id } + s.cycleId!! }.toSet()
+        d.copy(
+            sections = d.sections.filter { it.cycleId != null } + found +
+                plain.map { s -> s.copy(books = s.books.filter { it.id !in moved }) }.filter { it.books.isNotEmpty() },
         )
     }
 
