@@ -107,6 +107,12 @@ private data class Group(
     /** Группа «автор» (во вкладке «Прочитал» — книги вне циклов по авторам). */
     val isAuthor: Boolean = false,
     val authorPhoto: String? = null,
+    /** id автора (FantLab) — для перехода на страницу автора и группировки. */
+    val authorId: String? = null,
+    /** Для группы-автора: его прочитанные серии. */
+    val children: List<Group> = emptyList(),
+    /** Для группы-автора: всего прочитано книг. */
+    val readBooks: Int = 0,
 )
 
 /**
@@ -152,6 +158,7 @@ private fun buildGroups(
                     ?: c.books.firstOrNull { it.published && it.coverUrl != null }?.coverUrl,
                 bookCount = published.size,
                 spines = c.books.map { b -> Spine(b.id, shelf[b.id]?.status, b.published, b.id in c.newIds) },
+                authorId = c.authors.firstOrNull()?.id,
             )
         }
     }
@@ -177,33 +184,44 @@ private fun buildGroups(
             posterUrl = list.firstNotNullOfOrNull { it.book.coverUrl },
             spines = list.sortedBy { it.book.seriesNumber ?: Int.MAX_VALUE }
                 .map { e -> Spine(e.book.id, e.status, true, false) },
+            authorId = b0.authors.firstOrNull()?.id,
         )
     }.sortedBy { it.title }
     val singles = rest.filter { it.book.seriesName == null }
     val result = cycleGroups + seriesGroups
-    if (status == ReadStatus.READ && singles.isNotEmpty()) {
-        // «Прочитал»: книги вне циклов — по авторам (по первому автору книги)
-        val byAuthor = singles.groupBy { e ->
+    if (status == ReadStatus.READ) {
+        // «Прочитал»: всё — и прочитанные серии, и отдельные книги — по авторам
+        fun keyOf(id: String?, name: String?) =
+            id?.takeIf { it.startsWith("fl-") } ?: ("name:" + (name ?: "Автор не указан").substringBefore(", "))
+        val seriesByAuthor = result.groupBy { g -> keyOf(g.authorId, g.author) }
+        val singlesByAuthor = singles.groupBy { e ->
             val a = e.book.authors.firstOrNull()
-            a?.id?.takeIf { it.startsWith("fl-") } ?: ("name:" + (a?.name ?: "Автор не указан"))
+            keyOf(a?.id, a?.name)
         }
-        val authorGroups = byAuthor.map { (key, list) ->
-            val a = list.first().book.authors.firstOrNull()
+        val keys = (seriesByAuthor.keys + singlesByAuthor.keys)
+        val authorGroups = keys.map { key ->
+            val series = seriesByAuthor[key].orEmpty().sortedBy { it.title }
+            val books = singlesByAuthor[key].orEmpty().sortedByDescending { it.finishedAt ?: it.updatedAt }
+            val firstAuthor = books.firstOrNull()?.book?.authors?.firstOrNull()
+            val name = firstAuthor?.name
+                ?: series.firstOrNull()?.author?.substringBefore(", ")
+                ?: "Автор не указан"
+            val id = key.takeIf { it.startsWith("fl-") }
             Group(
                 key = "a:$key",
-                title = a?.name ?: "Автор не указан",
+                title = name,
                 cycleId = null,
                 progress = null,
-                lines = list.sortedByDescending { it.finishedAt ?: it.updatedAt }.map { e ->
-                    Line(e.book.id, null, e.book.title, e.book.year, false, true)
-                },
+                lines = books.map { e -> Line(e.book.id, null, e.book.title, e.book.year, false, true) },
                 hasNew = false,
                 isAuthor = true,
-                authorPhoto = a?.id?.takeIf { it.startsWith("fl-") }
-                    ?.let { "https://fantlab.ru/images/autors/${it.removePrefix("fl-")}" },
+                authorId = id,
+                authorPhoto = id?.let { "https://fantlab.ru/images/autors/${it.removePrefix("fl-")}" },
+                children = series,
+                readBooks = books.size + series.sumOf { it.lines.size },
             )
-        }.sortedWith(compareByDescending<Group> { it.lines.size }.thenBy { it.title })
-        return result + authorGroups
+        }.sortedWith(compareByDescending<Group> { it.readBooks }.thenBy { it.title })
+        return authorGroups
     }
     return if (singles.isEmpty()) result else result + Group(
         key = "single",
@@ -219,7 +237,7 @@ private fun buildGroups(
 }
 
 @Composable
-fun ShelfScreen(onBook: (String) -> Unit) {
+fun ShelfScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit = {}) {
     val shelf by ShelfRepository.entries.collectAsState()
     val cycles by CycleRepository.cycles.collectAsState()
     val scope = rememberCoroutineScope()
@@ -267,7 +285,7 @@ fun ShelfScreen(onBook: (String) -> Unit) {
             ScrollableTabRow(selectedTabIndex = ShelfUi.tab, edgePadding = 12.dp) {
                 statuses.forEachIndexed { i, s ->
                     val count = if (s == ReadStatus.READING) reading.size
-                    else groupsByStatus.getValue(s).sumOf { it.lines.size }
+                    else groupsByStatus.getValue(s).sumOf { if (it.isAuthor) it.readBooks else it.lines.size }
                     Tab(
                         selected = ShelfUi.tab == i,
                         onClick = { ShelfUi.tab = i },
@@ -306,12 +324,31 @@ fun ShelfScreen(onBook: (String) -> Unit) {
                         if (g.isAuthor) {
                             val openA = ShelfUi.expanded[g.key] == true
                             item(key = "h" + g.key) {
-                                AuthorGroupHeader(g, openA) { ShelfUi.expanded[g.key] = !openA }
+                                AuthorGroupHeader(g, openA, onAuthor = onAuthor) { ShelfUi.expanded[g.key] = !openA }
                             }
                             if (openA) {
+                                g.children.forEach { c ->
+                                    val openC = ShelfUi.expanded[c.key] == true
+                                    item(key = g.key + "/h/" + c.key) {
+                                        Box(Modifier.padding(start = 12.dp)) {
+                                            SeriesHeader(c, openC, onToggle = { ShelfUi.expanded[c.key] = !openC }, onBook = onBook)
+                                        }
+                                    }
+                                    if (openC) {
+                                        items(c.lines, key = { g.key + "/" + c.key + "/" + it.id }) { l ->
+                                            CompactBookLine(
+                                                number = l.number,
+                                                title = l.title,
+                                                sub = l.sub,
+                                                published = l.published,
+                                                indent = 40,
+                                            ) { onBook(l.id) }
+                                        }
+                                    }
+                                }
                                 items(g.lines, key = { g.key + "/" + it.id }) { l ->
                                     val e = shelf[l.id]
-                                    if (e != null) ReadingRow(e, cycles) { onBook(l.id) }
+                                    if (e != null) Box(Modifier.padding(start = 12.dp)) { ReadingRow(e, cycles) { onBook(l.id) } }
                                 }
                             }
                             return@forEach
@@ -473,14 +510,16 @@ private fun ReadingRow(e: ShelfEntry, cycles: Map<String, TrackedCycle>, onClick
 
 /** Заголовок автора во вкладке «Прочитал»: фото, имя, число книг, стрелка «раскрыть». */
 @Composable
-private fun AuthorGroupHeader(g: Group, open: Boolean, onToggle: () -> Unit) {
+private fun AuthorGroupHeader(g: Group, open: Boolean, onAuthor: (String) -> Unit, onToggle: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        val aid = g.authorId
         Box(
             Modifier.size(52.dp).clip(CircleShape)
-                .background(Brush.linearGradient(listOf(Violet, VioletDeep))),
+                .background(Brush.linearGradient(listOf(Violet, VioletDeep)))
+                .then(if (aid != null) Modifier.clickable { onAuthor(aid) } else Modifier),
             contentAlignment = Alignment.Center,
         ) {
             val initials = g.title.orEmpty().split(' ').filter { it.isNotEmpty() }.take(2)
@@ -500,10 +539,17 @@ private fun AuthorGroupHeader(g: Group, open: Boolean, onToggle: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                "прочитано книг: ${g.lines.size}",
+                "прочитано книг: ${g.readBooks}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary,
             )
+            if (g.children.isNotEmpty()) {
+                Text(
+                    "прочитано серий: ${g.children.size}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         Text(
             if (open) "Свернуть" else "Раскрыть",

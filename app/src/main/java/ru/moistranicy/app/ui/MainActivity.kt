@@ -121,9 +121,9 @@ private data class Tab(val route: String, val label: String, val icon: ImageVect
 private val tabs = listOf(
     Tab("shelf", "Полка", Icons.Filled.Home),
     Tab("authors", "Авторы", Icons.Filled.Face),
-    Tab("feed", "Лента", Icons.Filled.Favorite),
-    Tab("recs", "Советы", Icons.Filled.ThumbUp),
+    Tab("recs", "Рекомендации", Icons.Filled.ThumbUp),
     Tab("search", "Поиск", Icons.Filled.Search),
+    Tab("profile", "Профиль", Icons.Filled.Person),
 )
 
 fun NavHostController.openBook(id: String) = navigate("book/$id")
@@ -169,7 +169,7 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
         }
     }
 
-    CompositionLocalProvider(LocalOpenProfile provides { nav.navigate("profile") { launchSingleTop = true } }) {
+    CompositionLocalProvider(LocalOpenProfile provides null) { // соцфункции пока отключены
     Scaffold(
         contentWindowInsets = NoInsets,
         bottomBar = {
@@ -209,7 +209,7 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
         },
     ) { pad ->
         NavHost(nav, startDestination = "shelf", modifier = Modifier.padding(pad)) {
-            composable("shelf") { ShelfScreen(onBook = { nav.openBook(it) }) }
+            composable("shelf") { ShelfScreen(onBook = { nav.openBook(it) }, onAuthor = { nav.openAuthor(it) }) }
             composable("authors") {
                 AuthorsCloudScreen(onAuthor = { nav.openAuthor(it) }, onBook = { nav.openBook(it) })
             }
