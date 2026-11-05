@@ -136,6 +136,10 @@ private fun buildGroups(
         // прочитанный целиком цикл в «Хочу прочитать» не показываем, пока не выйдет новая книга
         if (status == ReadStatus.READ && (!fullyRead || c.dropped)) continue
         if (status == ReadStatus.WANT && fullyRead) continue
+        // ни одна книга цикла ещё не вышла — предлагать нечего (кроме явно отмеченных)
+        if (status == ReadStatus.WANT && published.isEmpty() &&
+            c.books.none { shelf[it.id]?.status == ReadStatus.WANT }
+        ) continue
         val lines = c.books.withIndex().filter { (_, b) ->
             val st = shelf[b.id]?.status
             // брошенный цикл больше не предлагаем: в «Хочу» — только явно отмеченные
