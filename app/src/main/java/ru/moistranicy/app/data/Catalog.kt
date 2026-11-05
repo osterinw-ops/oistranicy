@@ -116,6 +116,15 @@ object FantLab {
     }
 
     suspend fun searchAuthors(query: String, page: Int): Page<AuthorHit> = withContext(Dispatchers.IO) {
+        val direct = runCatching { searchAuthorsDirect(query, page) }
+        val found = direct.getOrNull()
+        if (page > 1 || (found != null && found.items.isNotEmpty())) return@withContext direct.getOrThrow()
+        // поиск авторов FantLab находит не всех: ищем автора среди авторов найденных книг
+        val fromWorks = runCatching { authorsFromWorks(query) }.getOrDefault(emptyList())
+        if (fromWorks.isEmpty()) direct.getOrThrow() else Page(fromWorks, false)
+    }
+
+    private fun searchAuthorsDirect(query: String, page: Int): Page<AuthorHit> {
         val arr = JSONArray(Http.get("$API/search-autors?q=${enc(query)}&page=$page&onlymatches=1"))
         val hits = (0 until arr.length()).mapNotNull { i ->
             val o = arr.getJSONObject(i)
@@ -127,7 +136,26 @@ object FantLab {
             KnownAuthors.add(name, "fl-$id")
             AuthorHit("fl-$id", name, sub)
         }
-        Page(hits, arr.length() >= PAGE_SIZE)
+        return Page(hits, arr.length() >= PAGE_SIZE)
+    }
+
+    private suspend fun authorsFromWorks(query: String): List<AuthorHit> {
+        fun norm(s: String) = s.lowercase().replace('ё', 'е')
+        val words = norm(query).split(Regex("\\s+")).filter { it.isNotEmpty() }
+        if (words.isEmpty()) return emptyList()
+        fun matches(p: Person) = norm(p.name).let { name -> words.all { it in name } }
+        fun usable(p: Person) = p.id?.startsWith("fl-") == true && matches(p)
+        val books = searchWorks(query, 1).items
+        // в списке книг у автора может не быть id — тогда берём его из карточки книги
+        val authors = books.flatMap { it.authors }.filter { usable(it) }.ifEmpty {
+            books.firstOrNull { b -> b.authors.any { matches(it) } }
+                ?.let { b -> work(b.id).book.authors.filter { usable(it) } }
+                .orEmpty()
+        }
+        return authors.distinctBy { it.id }.map { a ->
+            KnownAuthors.add(a.name, a.id!!)
+            AuthorHit(a.id, a.name, "найден по книгам")
+        }
     }
 
     suspend fun work(id: String): WorkDetails = withContext(Dispatchers.IO) {
