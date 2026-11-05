@@ -68,6 +68,7 @@ import ru.moistranicy.app.data.CycleRepository
 import ru.moistranicy.app.data.ExternalSources
 import ru.moistranicy.app.data.BookCache
 import ru.moistranicy.app.data.FantLab
+import ru.moistranicy.app.data.GoogleBooks
 import ru.moistranicy.app.data.ReadStatus
 import ru.moistranicy.app.data.ShelfRepository
 import ru.moistranicy.app.data.WorkDetails
@@ -84,6 +85,8 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
     var details by remember(id) { mutableStateOf(WorkCache.map[id]) }
     var loading by remember(id) { mutableStateOf(false) }
     var error by remember(id) { mutableStateOf<String?>(null) }
+    /** Данные из запасного источника, когда FantLab недоступен. */
+    var fallback by remember(id) { mutableStateOf<Book?>(null) }
 
     LaunchedEffect(id) {
         if (id.startsWith("fl-") && details == null) {
@@ -100,14 +103,20 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                error = e.message ?: "ошибка сети"
+                error = "FantLab"
+                (BookCache.get(id) ?: entry?.book)?.let { fallback = GoogleBooks.lookup(it) }
             } finally {
                 loading = false
             }
         }
     }
 
-    val book = details?.book ?: BookCache.get(id) ?: entry?.book
+    val baseBook = details?.book ?: BookCache.get(id) ?: entry?.book
+    val extra = fallback
+    val book = if (baseBook != null && extra != null) baseBook.copy(
+        annotation = baseBook.annotation.ifBlank { extra.annotation },
+        coverUrl = baseBook.coverUrl ?: extra.coverUrl,
+    ) else baseBook
     val cycles by CycleRepository.cycles.collectAsState()
     val scope = rememberCoroutineScope()
     val uri = LocalUriHandler.current
@@ -149,7 +158,7 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                followError = "Не удалось загрузить цикл: ${e.message}"
+                followError = "Не удалось загрузить цикл с FantLab"
             }
         }
     }
@@ -174,7 +183,7 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
     ) { pad ->
         if (book == null) {
             Box(Modifier.padding(pad)) {
-                if (loading) Loading() else CenterMessage(error?.let { "Не удалось загрузить: $it" } ?: "Книга не найдена")
+                if (loading) Loading() else CenterMessage(error?.let { "Не удалось загрузить данные: $it" } ?: "Книга не найдена")
             }
             return@Scaffold
         }
@@ -304,7 +313,7 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                             } catch (e: CancellationException) {
                                 throw e
                             } catch (e: Exception) {
-                                followError = "Не удалось загрузить цикл: ${e.message}"
+                                followError = "Не удалось загрузить цикл с FantLab"
                             }
                         }
                     }) {
@@ -398,11 +407,28 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
 
             error?.let {
                 Spacer(Modifier.height(12.dp))
-                Text(
-                    "Не удалось обновить данные: $it",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "Не удалось обновить данные: $it",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                if (extra != null) {
+                    Text(
+                        "Описание и обложка могут быть из Google Книг",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 22.dp, top = 2.dp),
+                    )
+                }
             }
             Spacer(Modifier.height(24.dp))
         }

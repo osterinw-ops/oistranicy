@@ -427,6 +427,15 @@ object FantLab {
 object GoogleBooks {
     private const val PAGE_SIZE = 20
 
+    /** Запасной источник описания и обложки, когда FantLab недоступен. */
+    suspend fun lookup(book: Book): Book? = runCatching {
+        val q = listOfNotNull(book.title, book.authors.firstOrNull()?.name).joinToString(" ")
+        val title = book.title.lowercase()
+        search(q, 1).items.firstOrNull {
+            it.title.lowercase().contains(title) && (it.annotation.isNotBlank() || it.coverUrl != null)
+        }
+    }.getOrNull()
+
     suspend fun search(query: String, page: Int): Page<Book> = withContext(Dispatchers.IO) {
         val start = (page - 1) * PAGE_SIZE
         val o = JSONObject(
