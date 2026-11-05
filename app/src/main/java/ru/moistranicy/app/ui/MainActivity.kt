@@ -157,6 +157,17 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
             goTab("shelf")
             currentTab = "shelf"
         }
+        // служебные переходы (используются при съёмке скриншотов): tab:<вкладка>, shelf:<статус>, book:<id>, author:<id>
+        when {
+            openRequest == null -> {}
+            openRequest.startsWith("tab:") -> openRequest.removePrefix("tab:").let { goTab(it); currentTab = it }
+            openRequest.startsWith("shelf:") -> {
+                ReadStatus.entries.firstOrNull { it.name == openRequest.removePrefix("shelf:") }?.let { ShelfUi.tab = it.ordinal }
+                goTab("shelf"); currentTab = "shelf"
+            }
+            openRequest.startsWith("book:") -> nav.openBook(openRequest.removePrefix("book:"))
+            openRequest.startsWith("author:") -> nav.openAuthor(openRequest.removePrefix("author:"))
+        }
         if (openRequest != null) onOpenHandled()
     }
 
