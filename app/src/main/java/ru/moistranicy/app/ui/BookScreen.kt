@@ -123,6 +123,11 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
     var confirmUndo by remember(id) { mutableStateOf<ReadStatus?>(null) }
     var pendingSheet by remember(id) { mutableStateOf<String?>(null) }
 
+    fun removeFromShelf() {
+        ShelfRepository.remove(id)
+        CycleRepository.onBookRemoved(id)
+    }
+
     fun closeRating() {
         rateDialog = false
         pendingSheet?.let { sheetCycleId = it }
@@ -159,7 +164,7 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                 },
                 actions = {
                     if (entry != null) {
-                        IconButton(onClick = { ShelfRepository.remove(id) }) {
+                        IconButton(onClick = { removeFromShelf() }) {
                             Icon(Icons.Filled.Delete, "Убрать с полки")
                         }
                     }
@@ -493,7 +498,7 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                             .clip(RoundedCornerShape(14.dp))
                             .background(Brush.horizontalGradient(listOf(Coral, Color(0xFFB8401F))))
                             .clickable {
-                                ShelfRepository.remove(id)
+                                removeFromShelf()
                                 confirmUndo = null
                             },
                         contentAlignment = Alignment.Center,
@@ -508,7 +513,7 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
     if (sheetCycle != null) {
         ModalBottomSheet(onDismissRequest = { sheetCycleId = null }) {
             val rest = sheetCycle.books.withIndex()
-                .filter { (_, b) -> b.id != id && shelf[b.id]?.status != ReadStatus.READ }
+                .filter { (_, b) -> shelf[b.id]?.status != ReadStatus.READ && !(b.id == id && shelf[id] != null) }
             Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
                 Text("Цикл «${sheetCycle.name}»", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 val total = sheetCycle.books.count { it.published }
@@ -521,7 +526,9 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                 )
                 Spacer(Modifier.height(12.dp))
                 if (rest.isEmpty()) {
-                    Text("Вы прочитали весь цикл! 🎉", style = MaterialTheme.typography.titleMedium)
+                    if (total > 0 && read == total) {
+                        Text("Вы прочитали весь цикл! 🎉", style = MaterialTheme.typography.titleMedium)
+                    }
                 } else {
                     Text("Что читать дальше", style = MaterialTheme.typography.titleSmall)
                     val next = rest.firstOrNull { (_, b) -> b.published && shelf[b.id] == null }

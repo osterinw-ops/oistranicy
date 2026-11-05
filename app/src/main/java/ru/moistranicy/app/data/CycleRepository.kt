@@ -72,6 +72,15 @@ object CycleRepository {
 
     fun unfollow(id: String) = save(_cycles.value - id)
 
+    /** Книгу убрали с полки: циклы, от которых на полке ничего не осталось, больше не отслеживаем. */
+    fun onBookRemoved(bookId: String) {
+        val shelf = ShelfRepository.entries.value
+        val stale = _cycles.value.values.filter { c ->
+            !c.dropped && c.books.any { it.id == bookId } && c.books.none { shelf.containsKey(it.id) }
+        }
+        if (stale.isNotEmpty()) save(_cycles.value - stale.map { it.id }.toSet())
+    }
+
     /** Бросить цикл: все непрочитанные вышедшие книги — в «Бросил», цикл больше не предлагаем. */
     fun dropCycle(id: String) {
         val c = _cycles.value[id] ?: return
