@@ -209,7 +209,7 @@ private fun buildGroups(
             val id = key.takeIf { it.startsWith("fl-") }
             Group(
                 key = "a:$key",
-                title = surnameFirst(name),
+                title = name,
                 cycleId = null,
                 progress = null,
                 lines = books.map { e -> Line(e.book.id, null, e.book.title, e.book.year, false, true) },
@@ -220,7 +220,7 @@ private fun buildGroups(
                 children = series,
                 readBooks = books.size + series.sumOf { it.lines.size },
             )
-        }.sortedBy { surnameKey(it.title.orEmpty()) }
+        }.sortedBy { surnameKey(surnameFirst(it.title.orEmpty())) }
         return authorGroups
     }
     return if (singles.isEmpty()) result else result + Group(
