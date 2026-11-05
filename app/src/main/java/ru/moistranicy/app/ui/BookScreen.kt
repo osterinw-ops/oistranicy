@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import android.net.Uri
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Button
 import androidx.compose.runtime.rememberCoroutineScope
@@ -113,14 +114,28 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
     /** Ближайший цикл книги на FantLab (если есть). */
     val cycleId = (details?.book?.seriesId ?: book?.seriesId)?.takeIf { it.startsWith("fl-") }
 
+    // окно оценки после «Прочитал»; подсказка по циклу — после него
+    var rateDialog by remember(id) { mutableStateOf(false) }
+    var pendingSheet by remember(id) { mutableStateOf<String?>(null) }
+
+    fun closeRating() {
+        rateDialog = false
+        pendingSheet?.let { sheetCycleId = it }
+        pendingSheet = null
+    }
+
     fun onStatus(b: Book, s: ReadStatus) {
+        val wasRead = ShelfRepository.get(b.id)?.status == ReadStatus.READ
         ShelfRepository.setStatus(b, s)
+        if (s == ReadStatus.READ && !wasRead) rateDialog = true
         val cid = cycleId ?: return
         if (s != ReadStatus.READ && s != ReadStatus.READING) return
         scope.launch {
             try {
                 CycleRepository.ensureFollowed(cid)
-                if (s == ReadStatus.READ) sheetCycleId = cid
+                if (s == ReadStatus.READ) {
+                    if (rateDialog) pendingSheet = cid else sheetCycleId = cid
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -384,6 +399,55 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
             }
             Spacer(Modifier.height(24.dp))
         }
+    }
+
+    if (rateDialog && book != null) {
+        val current = shelf[id]?.rating
+        AlertDialog(
+            onDismissRequest = { closeRating() },
+            title = { Text("Как вам книга?") },
+            text = {
+                Column {
+                    Text(
+                        "«${book.title}»",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(14.dp))
+                    listOf(1..5, 6..10).forEach { range ->
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                        ) {
+                            range.forEach { n ->
+                                val sel = current != null && n <= current
+                                Box(
+                                    Modifier
+                                        .size(42.dp)
+                                        .clip(CircleShape)
+                                        .background(if (sel) Coral else MaterialTheme.colorScheme.surfaceVariant)
+                                        .clickable {
+                                            ShelfRepository.setRating(id, n)
+                                            closeRating()
+                                        },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        "$n",
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (sel) Color.White else MaterialTheme.colorScheme.onSurface,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { closeRating() }) { Text("Пропустить") } },
+        )
     }
 
     val sheetId = sheetCycleId

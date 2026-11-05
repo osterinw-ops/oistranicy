@@ -251,12 +251,15 @@ fun ShelfScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit = {}) {
     val resetNonce = TabReset.nonces["shelf"] ?: 0
     LaunchedEffect(resetNonce, ShelfUi.tab) { runCatching { listState.scrollToItem(0) } }
 
-    val statuses = ReadStatus.entries
-    val groupsByStatus = statuses.associateWith { buildGroups(it, shelf, cycles) }
-    val current = statuses[ShelfUi.tab.coerceIn(0, statuses.size - 1)]
-    val groups = groupsByStatus.getValue(current)
     // «Читаю» — отдельными книгами, без группировки по циклам
     val reading = shelf.values.filter { it.status == ReadStatus.READING }.sortedByDescending { it.updatedAt }
+    // вкладка «Читаю» видна, только если есть книги с этим статусом
+    val statuses = ReadStatus.entries.filter { it != ReadStatus.READING || reading.isNotEmpty() }
+    val groupsByStatus = statuses.associateWith { buildGroups(it, shelf, cycles) }
+    val selected = ReadStatus.entries.getOrElse(ShelfUi.tab) { ReadStatus.WANT }
+    val current = if (selected in statuses) selected else ReadStatus.WANT
+    val tabIndex = statuses.indexOf(current).coerceAtLeast(0)
+    val groups = groupsByStatus.getValue(current)
 
     Scaffold(
         contentWindowInsets = NoInsets,
@@ -282,13 +285,13 @@ fun ShelfScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit = {}) {
         },
     ) { pad ->
         Column(Modifier.padding(pad)) {
-            ScrollableTabRow(selectedTabIndex = ShelfUi.tab, edgePadding = 12.dp) {
+            ScrollableTabRow(selectedTabIndex = tabIndex, edgePadding = 12.dp) {
                 statuses.forEachIndexed { i, s ->
                     val count = if (s == ReadStatus.READING) reading.size
                     else groupsByStatus.getValue(s).sumOf { if (it.isAuthor) it.readBooks else it.lines.size }
                     Tab(
-                        selected = ShelfUi.tab == i,
-                        onClick = { ShelfUi.tab = i },
+                        selected = tabIndex == i,
+                        onClick = { ShelfUi.tab = s.ordinal },
                         text = { Text("${s.title} $count", style = MaterialTheme.typography.labelLarge) },
                     )
                 }
