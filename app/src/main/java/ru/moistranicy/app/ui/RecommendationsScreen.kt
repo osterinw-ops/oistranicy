@@ -75,6 +75,22 @@ private object RecsState {
     var enriching by mutableStateOf(false)
     /** Книги, для которых уже пытались догрузить данные. */
     val enriched = HashSet<String>()
+    /** Жанры, для которых уже подбирали дополнительные книги. */
+    val genresLoaded = HashSet<String>()
+}
+
+/** Сбросить фильтры (двойное нажатие на вкладку, кнопка «Обновить»). */
+fun resetRecsFilters() {
+    RecsState.genre = null
+    RecsState.era = null
+    RecsState.page = 0
+}
+
+/** Открыть рекомендации сразу с фильтром по жанру (нажатие на тег). */
+fun showRecsForGenre(tag: String) {
+    RecsState.genre = tag
+    RecsState.era = null
+    RecsState.page = 0
 }
 
 /** Период книги для фильтра по году. */
@@ -114,6 +130,16 @@ fun RecommendationsScreen(onBook: (String) -> Unit) {
         scroll.scrollTo(0)
     }
     LaunchedEffect(RecsState.page) { scroll.scrollTo(0) }
+
+    // выбран жанр — дополняем список книгами именно этого жанра (один раз за сессию)
+    val focusGenre = RecsState.genre
+    val recsReady = RecsState.items != null
+    LaunchedEffect(focusGenre, recsReady) {
+        if (focusGenre == null || !recsReady || !RecsState.genresLoaded.add(focusGenre)) return@LaunchedEffect
+        val extra = Recommender.forGenre(focusGenre) { b -> b.genres.any { genreKey(it) == focusGenre } }
+        val known = RecsState.items.orEmpty().map { it.book.id }.toSet()
+        RecsState.items = RecsState.items.orEmpty() + extra.filter { it.book.id !in known }
+    }
 
     // жанры и годы догружаем отдельно: список показывается сразу, фильтры наполняются
     val itemIds = RecsState.items?.map { it.book.id }.orEmpty()
@@ -181,7 +207,12 @@ fun RecommendationsScreen(onBook: (String) -> Unit) {
                         CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         Spacer(Modifier.width(14.dp))
                     } else {
-                        IconButton(onClick = { load() }) { Icon(Icons.Filled.Refresh, "Обновить") }
+                        IconButton(onClick = {
+                            resetRecsFilters()
+                            RecsState.genresLoaded.clear()
+                            RecsState.enriched.clear()
+                            load()
+                        }) { Icon(Icons.Filled.Refresh, "Обновить") }
                     }
                 },
             )

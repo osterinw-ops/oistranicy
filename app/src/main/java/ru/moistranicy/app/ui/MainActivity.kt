@@ -183,6 +183,7 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
                                 when (t.route) {
                                     "search" -> resetSearch()
                                     "shelf" -> ShelfUi.reset()
+                                    "recs" -> resetRecsFilters()
                                 }
                                 TabReset.bump(t.route)
                                 nav.navigate(t.route) {
@@ -211,7 +212,13 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
         NavHost(nav, startDestination = "shelf", modifier = Modifier.padding(pad)) {
             composable("shelf") { ShelfScreen(onBook = { nav.openBook(it) }, onAuthor = { nav.openAuthor(it) }) }
             composable("authors") {
-                AuthorsCloudScreen(onAuthor = { nav.openAuthor(it) }, onBook = { nav.openBook(it) })
+                AuthorsCloudScreen(
+                    onAuthor = { nav.openAuthor(it) },
+                    onGenre = {
+                        showRecsForGenre(it)
+                        goTab("recs")
+                    },
+                )
             }
             composable("recs") { RecommendationsScreen(onBook = { nav.openBook(it) }) }
             composable("feed") {

@@ -82,6 +82,33 @@ object Recommender {
         return out.values.sortedByDescending { it.score }
     }
 
+    /** Дополнительный набор для жанра: похожие на книги этого жанра с полки. Жанры уточнит [enrich]. */
+    suspend fun forGenre(tag: String, sameGenre: (Book) -> Boolean): List<Recommendation> {
+        val shelf = ShelfRepository.entries.value
+        val sources = shelf.values
+            .filter { it.status != ReadStatus.DROPPED && it.book.id.startsWith("fl-") && sameGenre(it.book) }
+            .sortedWith(compareByDescending<ShelfEntry> { it.rating ?: 0 }.thenByDescending { it.updatedAt })
+            .take(8)
+        val out = LinkedHashMap<String, Recommendation>()
+        for (e in sources) {
+            val sims = runCatching { FantLab.similars(e.book.id) }.getOrNull() ?: continue
+            sims.forEach { b ->
+                if (b.id !in shelf && !b.isCycle && b.published && !isMinor(b.workType) && !RecBlock.isBlocked(b)) {
+                    val rating = b.communityRating
+                    val score = 45.0 + (e.rating ?: 6) + (rating ?: 0f)
+                    if ((out[b.id]?.score ?: 0.0) < score) {
+                        out[b.id] = Recommendation(
+                            b,
+                            "Жанр «$tag»: похожа на «${e.book.title}»" + (rating?.let { " · рейтинг FantLab ${fmt(it)}" } ?: ""),
+                            score,
+                        )
+                    }
+                }
+            }
+        }
+        return out.values.sortedByDescending { it.score }
+    }
+
     /** Догружает жанры и год рекомендованных книг (в списках FantLab их нет) порциями. */
     suspend fun enrich(list: List<Book>, onBatch: (List<Book>) -> Unit) {
         for (part in list.chunked(4)) {

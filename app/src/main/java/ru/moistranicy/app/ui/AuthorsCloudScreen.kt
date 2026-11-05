@@ -108,11 +108,10 @@ private fun <T> cloudOrder(sortedDesc: List<T>): List<T> {
 fun genreKey(genre: String): String = shortTag(genre.trim().lowercase())
 
 @Composable
-fun AuthorsCloudScreen(onAuthor: (String) -> Unit, onBook: (String) -> Unit) {
+fun AuthorsCloudScreen(onAuthor: (String) -> Unit, onGenre: (String) -> Unit) {
     val shelf by ShelfRepository.entries.collectAsState()
     val totals by AuthorStats.totals.collectAsState()
     val read = shelf.values.filter { it.status == ReadStatus.READ }
-    var tagSheet by remember { mutableStateOf<String?>(null) }
 
     // ---- авторы: размер — сколько прочитал я, цвет — сколько написал автор ----
     val authors = read.flatMap { e -> e.book.authors.map { it to e.book.id } }
@@ -215,39 +214,9 @@ fun AuthorsCloudScreen(onAuthor: (String) -> Unit, onBook: (String) -> Unit) {
                     maxSp = 26f,
                     scroll = tagsScroll,
                     modifier = Modifier.weight(1f),
-                ) { w -> tagSheet = w.key }
+                ) { w -> onGenre(w.key) }
             }
             Spacer(Modifier.height(8.dp))
-        }
-    }
-
-    val tag = tagSheet
-    if (tag != null) {
-        val books = read.filter { e -> e.book.genres.any { shortTag(it.trim().lowercase()) == tag } }
-            .sortedByDescending { it.finishedAt ?: 0 }
-        ModalBottomSheet(onDismissRequest = { tagSheet = null }) {
-            Column(Modifier.padding(bottom = 24.dp)) {
-                Text(
-                    tag.replaceFirstChar { it.uppercase() },
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-                Text(
-                    "Прочитано книг: ${books.size}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 16.dp, bottom = 6.dp),
-                )
-                Column(Modifier.verticalScroll(rememberScrollState())) {
-                    books.forEach { e ->
-                        CompactBookLine(null, e.book.title, e.book.authorsLine) {
-                            tagSheet = null
-                            onBook(e.book.id)
-                        }
-                    }
-                }
-            }
         }
     }
 }
