@@ -234,6 +234,7 @@ def handle_task(state, msg, text, photos):
 
 def process_updates(state):
     updates = tg("getUpdates", {"offset": state["offset"], "timeout": 0, "allowed_updates": ["message"]}) or []
+    print("Новых сообщений:", len(updates))
     for u in updates:
         state["offset"] = u["update_id"] + 1
         msg = u.get("message")
@@ -285,6 +286,12 @@ def process_replies(state):
 
 
 def main():
+    me = tg("getMe") or {}
+    print("Бот: @%s" % me.get("username", "?"))
+    hook = tg("getWebhookInfo") or {}
+    if hook.get("url"):
+        print("Найден webhook, отключаю:", hook.get("url"))
+        tg("deleteWebhook")
     state = load_state()
     ensure_label()
     process_updates(state)
