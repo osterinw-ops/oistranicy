@@ -1,6 +1,8 @@
 {
-  "offset": 0,
-  "admins": {},
+  "offset": 163600761,
+  "admins": {
+    "277367270": "Алексей Ф (@A_V_Fedorov)"
+  },
   "interval_hours": 1,
   "paused": false,
   "last_run": 1793876804,
