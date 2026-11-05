@@ -1,10 +1,11 @@
 {
-  "offset": 163600774,
+  "offset": 163600776,
   "admins": {
     "277367270": "Алексей Ф (@A_V_Fedorov)"
   },
   "interval_hours": 1,
   "paused": false,
   "last_run": 1793880423,
-  "sent_comments": []
+  "sent_comments": [],
+  "notified_sha": "507543f88437a02a0938a44c74c8f99302cc1d9c"
 }
