@@ -209,7 +209,7 @@ private fun buildGroups(
             val id = key.takeIf { it.startsWith("fl-") }
             Group(
                 key = "a:$key",
-                title = name,
+                title = surnameFirst(name),
                 cycleId = null,
                 progress = null,
                 lines = books.map { e -> Line(e.book.id, null, e.book.title, e.book.year, false, true) },
@@ -220,7 +220,7 @@ private fun buildGroups(
                 children = series,
                 readBooks = books.size + series.sumOf { it.lines.size },
             )
-        }.sortedWith(compareByDescending<Group> { it.readBooks }.thenBy { it.title })
+        }.sortedBy { surnameKey(it.title.orEmpty()) }
         return authorGroups
     }
     return if (singles.isEmpty()) result else result + Group(
@@ -235,6 +235,17 @@ private fun buildGroups(
         singles = true,
     )
 }
+
+/** «Михаил Атаманов» → «Атаманов Михаил» (фамилия — последнее слово). */
+private fun surnameFirst(name: String): String {
+    val words = name.trim().split(Regex("\\s+"))
+    if (words.size < 2) return name.trim()
+    return words.last() + " " + words.dropLast(1).joinToString(" ")
+}
+
+/** Ключ сортировки по фамилии (ё = е, без учёта регистра). */
+private fun surnameKey(surnameFirstName: String): String =
+    surnameFirstName.lowercase().replace('ё', 'е')
 
 @Composable
 fun ShelfScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit = {}) {
