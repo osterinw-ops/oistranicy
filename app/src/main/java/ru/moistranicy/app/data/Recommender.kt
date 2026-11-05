@@ -1,5 +1,9 @@
 package ru.moistranicy.app.data
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import java.util.Locale
 
 /**
@@ -76,6 +80,16 @@ object Recommender {
         }
 
         return out.values.sortedByDescending { it.score }
+    }
+
+    /** Догружает жанры и год рекомендованных книг (в списках FantLab их нет) порциями. */
+    suspend fun enrich(list: List<Book>, onBatch: (List<Book>) -> Unit) {
+        for (part in list.chunked(4)) {
+            val loaded = coroutineScope {
+                part.map { b -> async(Dispatchers.IO) { runCatching { FantLab.work(b.id).book }.getOrNull() } }.awaitAll()
+            }.filterNotNull()
+            if (loaded.isNotEmpty()) onBatch(loaded)
+        }
     }
 
     private fun books(n: Int): String {

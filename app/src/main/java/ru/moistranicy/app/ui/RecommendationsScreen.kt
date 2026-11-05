@@ -3,6 +3,7 @@
 package ru.moistranicy.app.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -66,6 +68,19 @@ private object RecsState {
     var loading by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
     var page by mutableIntStateOf(0)
+    /** Выбранные фильтры: жанр (как в облаке тегов) и период. */
+    var genre by mutableStateOf<String?>(null)
+    var era by mutableStateOf<String?>(null)
+    /** Идёт догрузка жанров и лет. */
+    var enriching by mutableStateOf(false)
+    /** Книги, для которых уже пытались догрузить данные. */
+    val enriched = HashSet<String>()
+}
+
+/** Период книги для фильтра по году. */
+private fun eraOf(year: String?): String? {
+    val y = year?.toIntOrNull() ?: return null
+    return if (y >= 1990) "${y / 10 * 10}-е" else "до 1990"
 }
 
 @Composable
@@ -100,16 +115,57 @@ fun RecommendationsScreen(onBook: (String) -> Unit) {
     }
     LaunchedEffect(RecsState.page) { scroll.scrollTo(0) }
 
+    // жанры и годы догружаем отдельно: список показывается сразу, фильтры наполняются
+    val itemIds = RecsState.items?.map { it.book.id }.orEmpty()
+    LaunchedEffect(itemIds) {
+        val need = RecsState.items.orEmpty().map { it.book }
+            .filter { (it.genres.isEmpty() || it.year == null) && it.id !in RecsState.enriched }
+        if (need.isEmpty()) return@LaunchedEffect
+        RecsState.enriching = true
+        try {
+            Recommender.enrich(need) { loaded ->
+                val byId = loaded.associateBy { it.id }
+                RecsState.enriched += byId.keys
+                RecsState.items = RecsState.items?.map { r ->
+                    val fresh = byId[r.book.id] ?: return@map r
+                    r.copy(
+                        book = r.book.copy(
+                            genres = fresh.genres.ifEmpty { r.book.genres },
+                            year = r.book.year ?: fresh.year,
+                            coverUrl = r.book.coverUrl ?: fresh.coverUrl,
+                            annotation = r.book.annotation.ifBlank { fresh.annotation },
+                        ),
+                    )
+                }
+            }
+        } finally {
+            RecsState.enriching = false
+        }
+    }
+
     // уже добавленное на полку не показываем
     val shelf by ShelfRepository.entries.collectAsState()
     val shelfIds = shelf.keys
     // скрытые книги и авторы исчезают сразу, без пересчёта
     val blockedBooks by RecBlock.books.collectAsState()
     val blockedAuthors by RecBlock.authors.collectAsState()
-    val all = RecsState.items.orEmpty().filter {
+    val pool = RecsState.items.orEmpty().filter {
         it.book.id !in shelfIds && it.book.id !in blockedBooks && !RecBlock.isBlocked(it.book)
     }
     blockedAuthors.size // подписка на изменения списка авторов
+    val genreFilter = RecsState.genre
+    val eraFilter = RecsState.era
+    val all = pool.filter { r ->
+        (genreFilter == null || r.book.genres.any { genreKey(it) == genreFilter }) &&
+            (eraFilter == null || eraOf(r.book.year) == eraFilter)
+    }
+    // варианты фильтров: жанры — от частых к редким, периоды — от новых к старым
+    val genreOptions = (pool.flatMap { r -> r.book.genres.map(::genreKey).distinct() }
+        .groupingBy { it }.eachCount().entries
+        .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
+        .map { it.key } + listOfNotNull(genreFilter)).distinct()
+    val eraOptions = (pool.mapNotNull { eraOf(it.book.year) } + listOfNotNull(eraFilter)).distinct()
+        .sortedByDescending { it.takeWhile(Char::isDigit).toIntOrNull() ?: 0 }
     val pages = (all.size + PER_PAGE - 1) / PER_PAGE
     val page = RecsState.page.coerceIn(0, (pages - 1).coerceAtLeast(0))
     val shown = all.drop(page * PER_PAGE).take(PER_PAGE)
@@ -131,7 +187,12 @@ fun RecommendationsScreen(onBook: (String) -> Unit) {
             )
         },
     ) { pad ->
-        Box(Modifier.padding(pad).fillMaxSize()) {
+        Column(Modifier.padding(pad).fillMaxSize()) {
+        if (genreOptions.isNotEmpty() || eraOptions.isNotEmpty()) {
+            FilterRow(eraOptions, eraFilter) { RecsState.era = it; RecsState.page = 0 }
+            FilterRow(genreOptions, genreFilter) { RecsState.genre = it; RecsState.page = 0 }
+        }
+        Box(Modifier.weight(1f).fillMaxWidth()) {
             val err = RecsState.error
             when {
                 RecsState.items == null && RecsState.loading -> Column(
@@ -147,7 +208,26 @@ fun RecommendationsScreen(onBook: (String) -> Unit) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                err != null && all.isEmpty() -> CenterMessage("Не удалось подобрать: $err", "Повторить") { load() }
+                err != null && pool.isEmpty() -> CenterMessage("Не удалось подобрать: $err", "Повторить") { load() }
+                all.isEmpty() && (genreFilter != null || eraFilter != null) -> {
+                    if (RecsState.enriching) Column(
+                        Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        CircularProgressIndicator()
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            "Подбираю книги…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else CenterMessage("С такими фильтрами книг нет.", "Сбросить фильтры") {
+                        RecsState.genre = null
+                        RecsState.era = null
+                        RecsState.page = 0
+                    }
+                }
                 all.isEmpty() -> CenterMessage(
                     "Пока нечего посоветовать.\n\nОтметьте несколько книг как «Прочитал» и поставьте оценки — " +
                         "рекомендации подбираются по тому, что вам понравилось.",
@@ -191,6 +271,25 @@ fun RecommendationsScreen(onBook: (String) -> Unit) {
                     }
                 }
             }
+        }
+        }
+    }
+}
+
+/** Строка фильтров: повторное нажатие снимает выбор. */
+@Composable
+private fun FilterRow(options: List<String>, selected: String?, onSelect: (String?) -> Unit) {
+    if (options.isEmpty()) return
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        options.forEach { o ->
+            FilterChip(
+                selected = o == selected,
+                onClick = { onSelect(if (o == selected) null else o) },
+                label = { Text(o, style = MaterialTheme.typography.labelMedium, maxLines = 1) },
+            )
         }
     }
 }

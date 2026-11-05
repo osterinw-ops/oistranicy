@@ -104,6 +104,9 @@ private fun <T> cloudOrder(sortedDesc: List<T>): List<T> {
     return out.toList()
 }
 
+/** Единый вид жанра: как в облаке тегов и в фильтрах рекомендаций. */
+fun genreKey(genre: String): String = shortTag(genre.trim().lowercase())
+
 @Composable
 fun AuthorsCloudScreen(onAuthor: (String) -> Unit, onBook: (String) -> Unit) {
     val shelf by ShelfRepository.entries.collectAsState()
