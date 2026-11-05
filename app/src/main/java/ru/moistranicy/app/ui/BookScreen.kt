@@ -119,6 +119,8 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
 
     // окно оценки после «Прочитал»; подсказка по циклу — после него
     var rateDialog by remember(id) { mutableStateOf(false) }
+    // подтверждение отмены статуса
+    var confirmUndo by remember(id) { mutableStateOf<ReadStatus?>(null) }
     var pendingSheet by remember(id) { mutableStateOf<String?>(null) }
 
     fun closeRating() {
@@ -266,7 +268,10 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                 ReadStatus.entries.forEach { s ->
                     FilterChip(
                         selected = entry?.status == s,
-                        onClick = { onStatus(book, s) },
+                        onClick = {
+                            // повторное нажатие на выбранный статус — отменить (с подтверждением)
+                            if (entry?.status == s) confirmUndo = s else onStatus(book, s)
+                        },
                         label = { Text(s.title) },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = MaterialTheme.colorScheme.primary,
@@ -452,6 +457,47 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                             fontWeight = FontWeight.Bold,
                         )
                     }
+                }
+            }
+        }
+    }
+
+    val undo = confirmUndo
+    if (undo != null && book != null) {
+        val r = shelf[id]?.rating
+        ModalBottomSheet(onDismissRequest = { confirmUndo = null }, containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+            Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 20.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    BookCover(book, Modifier.width(44.dp), corner = 5.dp)
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Отменить статус «${undo.title}»?", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            "«${book.title}» уйдёт с полки" + (if (r != null) ", оценка $r / 10 будет удалена." else "."),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(20.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(
+                        onClick = { confirmUndo = null },
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        shape = RoundedCornerShape(14.dp),
+                    ) { Text("Оставить") }
+                    Box(
+                        Modifier
+                            .weight(1.4f)
+                            .height(48.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Brush.horizontalGradient(listOf(Coral, Color(0xFFB8401F))))
+                            .clickable {
+                                ShelfRepository.remove(id)
+                                confirmUndo = null
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) { Text("Отменить статус", color = Color.White, fontWeight = FontWeight.Bold) }
                 }
             }
         }
