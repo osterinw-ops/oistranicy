@@ -20,6 +20,8 @@ android {
         def yandexClientId = System.getenv("YANDEX_CLIENT_ID") ?: (project.findProperty("yandexClientId") ?: "")
         manifestPlaceholders = [YANDEX_CLIENT_ID: yandexClientId]
         buildConfigField "String", "YANDEX_CLIENT_ID", "\"${yandexClientId}\""
+        // сборка для магазина (RuStore): без ссылок на скачивание FB2
+        buildConfigField "boolean", "STORE_BUILD", (System.getenv("STORE_BUILD") == "1") ? "true" : "false"
         // адрес социального сервера (функция Яндекс Облака)
         def socialApiUrl = System.getenv("SOCIAL_API_URL") ?: (project.findProperty("socialApiUrl") ?: "")
         buildConfigField "String", "SOCIAL_API_URL", "\"${socialApiUrl}\""

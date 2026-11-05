@@ -191,7 +191,8 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                             color = Coral,
                         )
                     }
-                    // поиск в Яндексе: «автор название скачать fb2»
+                    // поиск в Яндексе: «автор название скачать fb2» (только в сборке с GitHub)
+                    if (!ru.moistranicy.app.BuildConfig.STORE_BUILD) {
                     Spacer(Modifier.height(6.dp))
                     Text(
                         "Найти FB2 в Яндексе →",
@@ -203,6 +204,7 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                             runCatching { uri.openUri("https://yandex.ru/search/?text=" + Uri.encode(q)) }
                         }.padding(vertical = 2.dp),
                     )
+                    }
                 }
             }
 
