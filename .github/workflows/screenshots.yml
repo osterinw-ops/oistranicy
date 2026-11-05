@@ -5,6 +5,9 @@ on:
       device:
         description: 'Профиль эмулятора (pixel_c — планшет, pixel_6 — телефон)'
         default: 'pixel_c'
+      rotation:
+        description: 'Поворот экрана: 0 — родной, 1 — повернуть на 90°'
+        default: '1'
 permissions:
   contents: write
 jobs:
@@ -38,7 +41,7 @@ jobs:
           profile: ${{ inputs.device }}
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
-          script: OUT=screens bash .github/scripts/screens.sh
+          script: ROTATION=${{ inputs.rotation }} OUT=screens bash .github/scripts/screens.sh
       - name: Publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

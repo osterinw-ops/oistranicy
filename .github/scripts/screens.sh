@@ -5,6 +5,9 @@ PKG=ru.moistranicy.app
 OUT=${OUT:-screens}
 mkdir -p "$OUT"
 adb install -r app/build/outputs/apk/debug/app-debug.apk
+# вертикальная ориентация и чуть крупнее шрифт
+adb shell settings put system accelerometer_rotation 0
+adb shell settings put system user_rotation ${ROTATION:-0}
 adb shell pm grant $PKG android.permission.POST_NOTIFICATIONS || true
 # аккуратная строка состояния
 adb shell settings put global sysui_demo_allowed 1
