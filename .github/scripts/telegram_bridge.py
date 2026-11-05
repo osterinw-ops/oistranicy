@@ -36,6 +36,7 @@ DEFAULT_STATE = {
     "paused": False,
     "last_run": 0,         # время последнего разбора (ставит Claude)
     "sent_comments": [],   # id комментариев, уже отправленных в Telegram
+    "notified_sha": "",    # последняя сборка, о которой разослали уведомление
 }
 
 
@@ -285,6 +286,34 @@ def process_replies(state):
         send(target[0], "Задача #%d:\n%s" % (num, text), target[1])
 
 
+def notify_new_build(state):
+    """Новая успешная сборка «Build APK» → сообщение всем админам со списком изменений."""
+    runs = gh("GET", "/repos/%s/actions/workflows/build.yml/runs?branch=main&status=success&per_page=1" % REPO) or {}
+    run = (runs.get("workflow_runs") or [None])[0]
+    if not run:
+        return
+    sha = run["head_sha"]
+    last = state.get("notified_sha") or ""
+    if sha == last:
+        return
+    state["notified_sha"] = sha
+    if not last:
+        return  # первый запуск: просто запоминаем текущую версию
+    cmp = gh("GET", "/repos/%s/compare/%s...%s" % (REPO, last, sha)) or {}
+    titles = []
+    for c in cmp.get("commits") or []:
+        title = (c.get("commit", {}).get("message") or "").split("\n")[0].strip()
+        if title and not title.lower().startswith("merge"):
+            titles.append(title)
+    if not titles:
+        return
+    version = "0.5.%s" % run.get("run_number", "")
+    text = "📲 Новая версия МоиСтраницы %s\n\n%s\n\nСкачать (ставится поверх):\nhttps://github.com/%s/releases/download/latest/moistranicy.apk" % (
+        version, "\n".join("• " + t for t in titles[-15:]), REPO)
+    for uid in state["admins"].keys():
+        send(int(uid), text)
+
+
 def main():
     me = tg("getMe") or {}
     print("Бот: @%s" % me.get("username", "?"))
@@ -296,6 +325,7 @@ def main():
     ensure_label()
     process_updates(state)
     process_replies(state)
+    notify_new_build(state)
     save_state(state)
 
 
