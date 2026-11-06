@@ -59,6 +59,7 @@ import ru.moistranicy.app.data.CycleRepository
 import ru.moistranicy.app.data.ReadStatus
 import ru.moistranicy.app.data.ShelfEntry
 import ru.moistranicy.app.data.TrackedCycle
+import ru.moistranicy.app.data.isHiddenType
 
 /** Выбранная вкладка полки — переживает переходы и открытие из уведомления. */
 object ShelfUi {
@@ -80,6 +81,7 @@ private data class Line(
     val sub: String?,
     val isNew: Boolean,
     val published: Boolean,
+    val mark: BookMark? = null,
 )
 
 private data class Group(
@@ -127,27 +129,29 @@ private fun buildGroups(
     val used = HashSet<String>()
     val cycleGroups = mutableListOf<Group>()
     for (c in cycles.values) {
-        val published = c.books.filter { it.published }
+        // скрытые типы (статьи, сборники…) не показываем вовсе
+        val books = c.books.withIndex().filter { !isHiddenType(it.value.type) }
+        // обязательные книги: вышли, написаны основным автором и изданы на русском
+        val published = books.map { it.value }.filter { it.published && !it.optional }
         val read = published.count { shelf[it.id]?.status == ReadStatus.READ }
         val fullyRead = published.isNotEmpty() && read == published.size
         // книги отслеживаемого цикла не попадают в «Вне циклов» ни в одной вкладке
         c.books.forEach { used += it.id }
-        // «Прочитал» — только циклы, прочитанные полностью (и не брошенные);
+        // «Прочитал» — все прочитанные книги цикла, даже если цикл не дочитан;
         // прочитанный целиком цикл в «Хочу прочитать» не показываем, пока не выйдет новая книга
-        if (status == ReadStatus.READ && (!fullyRead || c.dropped)) continue
         if (status == ReadStatus.WANT && fullyRead) continue
         // ни одна книга цикла ещё не вышла — предлагать нечего (кроме явно отмеченных)
         if (status == ReadStatus.WANT && published.isEmpty() &&
             c.books.none { shelf[it.id]?.status == ReadStatus.WANT }
         ) continue
-        val lines = c.books.withIndex().filter { (_, b) ->
+        val lines = books.filter { (_, b) ->
             val st = shelf[b.id]?.status
             // брошенный цикл больше не предлагаем: в «Хочу» — только явно отмеченные
             if (status == ReadStatus.WANT && !c.dropped) st == ReadStatus.WANT || st == null else st == status
         }.map { (i, b) ->
             used += b.id
             Line(b.id, i + 1, b.title, b.year?.let { if (b.published) it else "$it, ожидается" }
-                ?: if (!b.published) "ожидается" else null, b.id in c.newIds, b.published)
+                ?: if (!b.published) "ожидается" else null, b.id in c.newIds, b.published, b.mark())
         }
         if (lines.isNotEmpty()) {
             cycleGroups += Group(
@@ -161,7 +165,7 @@ private fun buildGroups(
                 posterUrl = c.coverUrl?.takeIf { it.contains("/images/editions/") }
                     ?: c.books.firstOrNull { it.published && it.coverUrl != null }?.coverUrl,
                 bookCount = published.size,
-                spines = c.books.map { b -> Spine(b.id, shelf[b.id]?.status, b.published, b.id in c.newIds) },
+                spines = books.map { (_, b) -> Spine(b.id, shelf[b.id]?.status, b.published, b.id in c.newIds) },
                 authorId = c.authors.firstOrNull()?.id,
             )
         }
@@ -359,6 +363,7 @@ fun ShelfScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit = {}) {
                                                 title = l.title,
                                                 sub = l.sub,
                                                 published = l.published,
+                                                mark = l.mark,
                                                 indent = 40,
                                             ) { onBook(l.id) }
                                         }
@@ -398,6 +403,7 @@ fun ShelfScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit = {}) {
                                     sub = l.sub,
                                     isNew = l.isNew,
                                     published = l.published,
+                                    mark = l.mark,
                                     indent = if (g.isSeries) 28 else 16,
                                 ) { onBook(l.id) }
                             }
@@ -484,8 +490,10 @@ private fun ReadingRow(e: ShelfEntry, cycles: Map<String, TrackedCycle>, onClick
     val tracked = cycles.values.firstOrNull { c -> c.books.any { it.id == b.id } }
     val seriesLine = when {
         tracked != null -> {
-            val n = tracked.books.indexOfFirst { it.id == b.id } + 1
-            "Цикл «${tracked.name}», книга $n из ${tracked.books.count { it.published }}"
+            val visible = tracked.books.filter { !isHiddenType(it.type) || it.id == b.id }
+            val n = visible.indexOfFirst { it.id == b.id } + 1
+            val total = visible.count { it.published }
+            "Цикл «${tracked.name}», книга $n из ${maxOf(total, n)}"
         }
         b.seriesName != null -> "Цикл «${b.seriesName}»" + (b.seriesNumber?.let { ", книга $it" } ?: "")
         else -> null

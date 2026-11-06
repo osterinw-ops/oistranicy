@@ -111,7 +111,7 @@ object FantLab {
                 isCycle = o.str("name_eng") in CYCLE_TYPES,
                 communityRating = o.floatOrNull("midmark_by_weight") ?: o.floatOrNull("midmark"),
             ).also { BookCache.put(it); KnownAuthors.addAll(it.authors) }
-        }
+        }.filter { !isHiddenType(it.workType) }
         Page(books, arr.length() >= PAGE_SIZE)
     }
 
@@ -215,7 +215,7 @@ object FantLab {
                 val b = blockItemToBook(c) ?: return@mapNotNull null
                 CycleItem(b, c.optInt("deep", 1).coerceAtLeast(1), b.published)
             }
-        }.orEmpty()
+        }.orEmpty().filter { !isHiddenType(it.book.workType) }
 
         WorkDetails(book, parents, children)
     }
@@ -238,7 +238,8 @@ object FantLab {
             nameOrig = o.str("name_orig"),
             imageUrl = image(o.str("image")),
             years = years,
-            sections = sections.filter { it.books.isNotEmpty() },
+            sections = sections.map { s -> s.copy(books = s.books.filter { !isHiddenType(it.workType) }) }
+                .filter { it.books.isNotEmpty() },
             nameGenitive = o.str("name_rp").ifEmpty { o.str("name").ifEmpty { o.str("name_orig") } },
         )
     }
@@ -419,7 +420,7 @@ object FantLab {
                 communityRating = o.optJSONObject("stat")?.floatOrNull("rating"),
                 published = o.optInt("published", 1) == 1,
             ).also { BookCache.put(it) }
-        }
+        }.filter { !isHiddenType(it.workType) }
     }
 }
 

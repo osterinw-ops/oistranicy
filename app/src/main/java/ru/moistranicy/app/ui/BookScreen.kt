@@ -72,6 +72,8 @@ import ru.moistranicy.app.data.GoogleBooks
 import ru.moistranicy.app.data.ReadStatus
 import ru.moistranicy.app.data.ShelfRepository
 import ru.moistranicy.app.data.WorkDetails
+import ru.moistranicy.app.data.isHiddenType
+import ru.moistranicy.app.data.isPseudoAuthor
 
 /** Загруженные карточки FantLab, чтобы «Назад» не грузил заново. */
 private object WorkCache {
@@ -368,6 +370,7 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
             if (children.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
                 val readCount = children.count { shelf[it.book.id]?.status == ReadStatus.READ }
+                val mainAuthor = book.authors.firstOrNull { !isPseudoAuthor(it) }?.id
                 Text(
                     "Состав цикла · прочитано $readCount из ${children.size}",
                     style = MaterialTheme.typography.titleSmall,
@@ -383,12 +386,14 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(Modifier.weight(1f)) {
+                            val mark = if (c.book.isCycle) null else markFor(c.book, mainAuthor)
                             Text(
                                 c.book.title,
                                 style = if (c.deep == 1) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyMedium,
                                 fontWeight = if (c.book.isCycle) FontWeight.SemiBold else FontWeight.Normal,
+                                color = mark?.color ?: Color.Unspecified,
                             )
-                            val m = listOfNotNull(c.book.workType, c.book.year).joinToString(", ")
+                            val m = listOfNotNull(c.book.workType, c.book.year, mark?.label).joinToString(", ")
                             if (m.isNotEmpty()) {
                                 Text(m, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
@@ -539,11 +544,12 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
     if (sheetCycle != null) {
         ModalBottomSheet(onDismissRequest = { sheetCycleId = null }) {
             val rest = sheetCycle.books.withIndex()
-                .filter { (_, b) -> shelf[b.id]?.status != ReadStatus.READ && !(b.id == id && shelf[id] != null) }
+                .filter { (_, b) -> !isHiddenType(b.type) && shelf[b.id]?.status != ReadStatus.READ && !(b.id == id && shelf[id] != null) }
             Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
                 Text("Цикл «${sheetCycle.name}»", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                val total = sheetCycle.books.count { it.published }
-                val read = sheetCycle.books.count { it.published && shelf[it.id]?.status == ReadStatus.READ }
+                val required = sheetCycle.books.filter { it.published && !it.optional && !isHiddenType(it.type) }
+                val total = required.size
+                val read = required.count { shelf[it.id]?.status == ReadStatus.READ }
                 Text(
                     "Прочитано $read из $total. Остальные книги цикла — в «Полка → Хочу прочитать», " +
                         "о новых книгах придёт уведомление.",
@@ -555,7 +561,7 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                 val previous = if (position > 0 && shelf[id]?.status == ReadStatus.READ) {
                     sheetCycle.books.take(position).filter { b ->
                         val st = shelf[b.id]?.status
-                        b.published && st != ReadStatus.READ && st != ReadStatus.DROPPED
+                        b.published && !b.optional && !isHiddenType(b.type) && st != ReadStatus.READ && st != ReadStatus.DROPPED
                     }
                 } else emptyList()
                 if (previous.isNotEmpty()) {
@@ -575,13 +581,13 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                     )
                 }
                 Spacer(Modifier.height(12.dp))
-                if (rest.isEmpty()) {
+                if (rest.isEmpty() || (total > 0 && read == total && rest.all { it.value.optional || !it.value.published })) {
                     if (total > 0 && read == total) {
                         Text("Вы прочитали весь цикл! 🎉", style = MaterialTheme.typography.titleMedium)
                     }
                 } else {
                     Text("Что читать дальше", style = MaterialTheme.typography.titleSmall)
-                    val next = rest.firstOrNull { (_, b) -> b.published && shelf[b.id] == null }
+                    val next = rest.firstOrNull { (_, b) -> b.published && !b.optional && shelf[b.id] == null }
                     if (next != null) {
                         Spacer(Modifier.height(6.dp))
                         Button(onClick = {
@@ -599,6 +605,7 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                                 isNew = b.id in sheetCycle.newIds,
                                 published = b.published,
                                 indent = 0,
+                                mark = b.mark(),
                             ) {
                                 sheetCycleId = null
                                 onBook(b.id)

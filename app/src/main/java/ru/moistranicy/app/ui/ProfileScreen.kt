@@ -36,6 +36,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import ru.moistranicy.app.data.AppPrefs
 import ru.moistranicy.app.data.FONT_SCALES
+import ru.moistranicy.app.data.OPTIONAL_TYPES
 import ru.moistranicy.app.data.ThemeMode
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material3.FilterChip
@@ -159,6 +160,23 @@ private fun SettingsCard() {
                 )
             }
         }
+        Spacer(Modifier.height(8.dp))
+        Text("Показывать в приложении", style = MaterialTheme.typography.titleSmall)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            OPTIONAL_TYPES.forEach { (type, label) ->
+                val shown = type !in AppPrefs.hiddenTypes
+                FilterChip(
+                    selected = shown,
+                    onClick = { AppPrefs.setTypeHidden(type, shown) },
+                    label = { Text(label) },
+                )
+            }
+        }
+        Text(
+            "Антологии и сборники не показываются: в них те же книги, что и в библиографии.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Spacer(Modifier.height(8.dp))
         Text(
             "Данные о книгах: FantLab (fantlab.ru) и Google Книги. Полка хранится только на этом телефоне.",

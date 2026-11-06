@@ -6,6 +6,7 @@ import org.json.JSONObject
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
 enum class ThemeMode(val title: String) { SYSTEM("Как в системе"), LIGHT("Светлая"), DARK("Тёмная") }
@@ -23,6 +24,10 @@ object AppPrefs {
     var themeMode by mutableIntStateOf(ThemeMode.SYSTEM.ordinal)
         private set
 
+    /** Типы произведений, которые пользователь скрыл (см. OPTIONAL_TYPES). */
+    var hiddenTypes by mutableStateOf<Set<String>>(emptySet())
+        private set
+
     val theme: ThemeMode get() = ThemeMode.entries.getOrElse(themeMode) { ThemeMode.SYSTEM }
 
     fun init(context: Context) {
@@ -31,6 +36,13 @@ object AppPrefs {
         yearGoal = sp.getInt("yearGoal", 24)
         fontScale = sp.getFloat("fontScale", 1f)
         themeMode = sp.getInt("themeMode", ThemeMode.SYSTEM.ordinal)
+        hiddenTypes = sp.getStringSet("hiddenTypes", emptySet())?.toSet() ?: emptySet()
+    }
+
+    fun setTypeHidden(type: String, hidden: Boolean) {
+        hiddenTypes = if (hidden) hiddenTypes + type else hiddenTypes - type
+        sp.edit().putStringSet("hiddenTypes", hiddenTypes).apply()
+        changed()
     }
 
     fun saveYearGoal(value: Int) {
@@ -62,6 +74,7 @@ object AppPrefs {
         put("yearGoal", yearGoal)
         put("fontScale", fontScale.toDouble())
         put("themeMode", themeMode)
+        put("hiddenTypes", org.json.JSONArray(hiddenTypes.toList()))
         put("changedAt", sp.getLong("prefsChangedAt", 0L))
     }
 
@@ -71,8 +84,10 @@ object AppPrefs {
         yearGoal = o.optInt("yearGoal", yearGoal)
         fontScale = o.optDouble("fontScale", fontScale.toDouble()).toFloat()
         themeMode = o.optInt("themeMode", themeMode)
+        o.optJSONArray("hiddenTypes")?.let { a -> hiddenTypes = (0 until a.length()).map { a.getString(it) }.toSet() }
         sp.edit()
             .putInt("yearGoal", yearGoal).putFloat("fontScale", fontScale).putInt("themeMode", themeMode)
+            .putStringSet("hiddenTypes", hiddenTypes)
             .putLong("prefsChangedAt", remoteAt).apply()
     }
 }

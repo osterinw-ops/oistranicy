@@ -47,6 +47,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import ru.moistranicy.app.data.Book
+import ru.moistranicy.app.data.CycleBook
+import ru.moistranicy.app.data.isForeignTitle
+import ru.moistranicy.app.data.isPseudoAuthor
 import ru.moistranicy.app.data.AuthorHit
 import ru.moistranicy.app.data.ReadStatus
 import ru.moistranicy.app.data.ShelfRepository
@@ -251,9 +254,11 @@ fun CompactBookLine(
     isNew: Boolean = false,
     published: Boolean = true,
     indent: Int = 16,
+    mark: BookMark? = null,
     onClick: () -> Unit,
 ) {
-    val onSurface = MaterialTheme.colorScheme.onSurface
+    val onSurface = mark?.color ?: MaterialTheme.colorScheme.onSurface
+    val sub = listOfNotNull(sub?.ifEmpty { null }, mark?.label).joinToString(" · ")
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     Row(
         Modifier
@@ -371,4 +376,25 @@ fun ExternalSourcesRow(query: String, label: String, modifier: Modifier = Modifi
             }
         }
     }
+}
+
+
+/** Необязательная книга цикла: подсвечиваем другим цветом и подписываем. */
+enum class BookMark(val label: String, val color: Color) {
+    OTHER_AUTHOR("другой автор", Color(0xFF2A9D8F)),
+    FOREIGN("не на русском", Color(0xFFC0802B)),
+}
+
+fun CycleBook.mark(): BookMark? = when {
+    side -> BookMark.OTHER_AUTHOR
+    foreign -> BookMark.FOREIGN
+    else -> null
+}
+
+/** Отметка для книги в библиографии автора: соавторский цикл другого автора или книга не на русском. */
+fun markFor(book: Book, authorId: String?): BookMark? = when {
+    authorId != null && book.authors.isNotEmpty() &&
+        book.authors.filter { !isPseudoAuthor(it) }.let { a -> a.isNotEmpty() && a.none { it.id == authorId } } -> BookMark.OTHER_AUTHOR
+    isForeignTitle(book.title) -> BookMark.FOREIGN
+    else -> null
 }

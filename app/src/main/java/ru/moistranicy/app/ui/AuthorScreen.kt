@@ -152,7 +152,7 @@ private fun AuthorContent(d: AuthorDetails, onBook: (String) -> Unit) {
         cycleSections.forEach { s ->
             val cid = s.cycleId!!
             val open = expanded[cid] == true
-            val published = s.books.filter { it.published }
+            val published = s.books.filter { it.published && markFor(it, d.id) == null }
             val read = published.count { shelf[it.id]?.status == ReadStatus.READ }
             item(key = "c$cid") {
                 Row(
@@ -204,6 +204,7 @@ private fun AuthorContent(d: AuthorDetails, onBook: (String) -> Unit) {
                         status = shelf[b.id]?.status,
                         published = b.published,
                         indent = 36,
+                        mark = markFor(b, d.id),
                     ) { onBook(b.id) }
                 }
             }
@@ -218,6 +219,7 @@ private fun AuthorContent(d: AuthorDetails, onBook: (String) -> Unit) {
                     sub = listOfNotNull(b.workType, b.year, if (!b.published) "в планах" else null).joinToString(", "),
                     status = shelf[b.id]?.status,
                     published = b.published,
+                    mark = markFor(b, d.id),
                 ) { onBook(b.id) }
             }
         }

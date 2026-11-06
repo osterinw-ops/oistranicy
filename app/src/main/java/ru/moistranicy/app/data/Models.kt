@@ -60,7 +60,14 @@ data class CycleBook(
     val type: String?,
     val published: Boolean,
     val coverUrl: String? = null,
-)
+    /** Книга написана не основным автором цикла (межавторские продолжения и т. п.). */
+    val side: Boolean = false,
+    /** Книга не издана на русском (название только на языке оригинала). */
+    val foreign: Boolean = false,
+) {
+    /** Необязательная книга: не нужна, чтобы цикл считался прочитанным. */
+    val optional: Boolean get() = side || foreign
+}
 
 /** Цикл, за которым следит пользователь. newIds — книги, появившиеся с прошлого просмотра. */
 data class TrackedCycle(
@@ -85,6 +92,35 @@ private val MINOR_TYPES = setOf(
     "интервью", "рецензия", "предисловие", "послесловие", "пьеса-шутка",
 )
 
+/** Антологии и сборники не показываем никогда: они повторяют входящие в них книги. */
+private val ALWAYS_HIDDEN_TYPES = setOf("антология", "сборник")
+
+/** Типы произведений, которые можно скрыть в настройках: тип FantLab → подпись. */
+val OPTIONAL_TYPES = listOf(
+    "статья" to "Статьи",
+    "рецензия" to "Рецензии",
+    "интервью" to "Интервью",
+    "киносценарий" to "Киносценарии",
+    "комикс" to "Комиксы",
+)
+
+/** Произведение этого типа не показываем (всегда или по настройке пользователя). */
+fun isHiddenType(type: String?): Boolean {
+    val t = type?.lowercase()?.trim() ?: return false
+    return t in ALWAYS_HIDDEN_TYPES || t in AppPrefs.hiddenTypes
+}
+
+/** Название без кириллицы, но с латиницей (или другим алфавитом) — книга не издана на русском. */
+fun isForeignTitle(title: String): Boolean {
+    val letters = title.filter { it.isLetter() }
+    if (letters.isEmpty()) return false
+    return letters.none { it in 'а'..'я' || it in 'А'..'Я' || it == 'ё' || it == 'Ё' }
+}
+
+/** «Межавторский цикл» и подобные служебные авторы FantLab. */
+fun isPseudoAuthor(p: Person): Boolean =
+    p.id == "fl-10" || p.name.contains("межавторск", ignoreCase = true)
+
 fun isMinor(type: String?): Boolean {
     val t = type?.lowercase() ?: return false
     return t.contains("рассказ") || t in MINOR_TYPES
@@ -95,7 +131,7 @@ fun isMinor(type: String?): Boolean {
  * (рассказы, статьи). Если цикл целиком из рассказов — оставляем их.
  */
 fun cycleBooks(children: List<CycleItem>): List<CycleItem> {
-    val leaves = children.filter { !it.book.isCycle }.distinctBy { it.book.id }
+    val leaves = children.filter { !it.book.isCycle && !isHiddenType(it.book.workType) }.distinctBy { it.book.id }
     val major = leaves.filter { !isMinor(it.book.workType) }
     return major.ifEmpty { leaves }
 }

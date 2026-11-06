@@ -7,6 +7,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.Executors
+import kotlinx.coroutines.launch
 
 /** Новая (или только что вышедшая) книга в отслеживаемом цикле. */
 data class CycleNews(val cycleId: String, val cycleName: String, val book: CycleBook)
@@ -212,11 +213,38 @@ object CycleRepository {
             workType = b.type, published = b.published,
         )
 
-    private fun toCycleBooks(d: WorkDetails): List<CycleBook> =
-        cycleBooks(d.children).map {
-            CycleBook(it.book.id, it.book.title, it.book.year, it.book.workType, it.published,
-                it.book.coverUrl ?: BookCache.get(it.book.id)?.coverUrl)
+    private fun toCycleBooks(d: WorkDetails): List<CycleBook> {
+        val items = cycleBooks(d.children)
+        // основные авторы — авторы самого цикла, а у межавторского — самый частый автор книг
+        val main = d.book.authors.filter { !isPseudoAuthor(it) }.mapNotNull { it.id }.toSet().ifEmpty {
+            items.flatMap { it.book.authors }.filter { !isPseudoAuthor(it) }.mapNotNull { it.id }
+                .groupingBy { it }.eachCount().maxByOrNull { it.value }?.key?.let { setOf(it) }.orEmpty()
         }
+        return items.map {
+            val authors = it.book.authors.filter { a -> !isPseudoAuthor(a) }
+            CycleBook(
+                it.book.id, it.book.title, it.book.year, it.book.workType, it.published,
+                it.book.coverUrl ?: BookCache.get(it.book.id)?.coverUrl,
+                side = main.isNotEmpty() && authors.isNotEmpty() && authors.none { a -> a.id in main },
+                foreign = isForeignTitle(it.book.title),
+            )
+        }
+    }
+
+    /** Циклы, сохранённые до появления отметок «другой автор» / «не на русском». */
+    private val outdated = HashSet<String>()
+
+    /** Один раз обновить такие циклы с FantLab (в фоне). */
+    fun refreshOutdatedInBackground() {
+        val ids = synchronized(outdated) { outdated.toList().also { outdated.clear() } }
+        if (ids.isEmpty()) return
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            for (id in ids) {
+                if (get(id) == null) continue
+                runCatching { FantLab.work(id) }.getOrNull()?.let { applyUpdate(it) }
+            }
+        }
+    }
 
     /** Сохранить изменения: изменённым циклам ставим отметку времени, удалённым — «надгробие». */
     @Synchronized
@@ -305,6 +333,8 @@ object CycleRepository {
                 put(JSONObject().apply {
                     put("id", b.id); put("title", b.title); putOpt("year", b.year)
                     putOpt("type", b.type); put("published", b.published); putOpt("coverUrl", b.coverUrl)
+                    if (b.side) put("side", true)
+                    if (b.foreign) put("foreign", true)
                 })
             }
         })
@@ -314,12 +344,17 @@ object CycleRepository {
         put("genres", JSONArray(c.genres))
         put("dropped", c.dropped)
         put("changedAt", c.changedAt)
+        put("v", FORMAT)
     }
+
+    /** Версия формата: 2 — у книг есть отметки side/foreign. */
+    private const val FORMAT = 2
 
     private fun fromJson(o: JSONObject): TrackedCycle {
         val authors = o.optJSONArray("authors") ?: JSONArray()
         val books = o.optJSONArray("books") ?: JSONArray()
         val newIds = o.optJSONArray("newIds") ?: JSONArray()
+        if (o.optInt("v", 1) < FORMAT) synchronized(outdated) { outdated += o.getString("id") }
         return TrackedCycle(
             id = o.getString("id"),
             name = o.optString("name"),
@@ -337,6 +372,8 @@ object CycleRepository {
                     type = if (b.has("type") && !b.isNull("type")) b.getString("type") else null,
                     published = b.optBoolean("published", true),
                     coverUrl = if (b.has("coverUrl") && !b.isNull("coverUrl")) b.getString("coverUrl") else null,
+                    side = b.optBoolean("side", false),
+                    foreign = b.optBoolean("foreign", false),
                 )
             },
             newIds = (0 until newIds.length()).map { newIds.getString(it) }.toSet(),
