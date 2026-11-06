@@ -81,6 +81,37 @@ def send(chat_id, text, reply_to=None):
     return tg("sendMessage", p)
 
 
+def send_document(chat_id, data, filename, caption=""):
+    """Отправить файл (multipart/form-data)."""
+    boundary = "----moistranicy%d" % int(time.time() * 1000)
+    parts = []
+    for k, v in (("chat_id", str(chat_id)), ("caption", caption[:1000])):
+        parts.append(("--%s\r\nContent-Disposition: form-data; name=\"%s\"\r\n\r\n%s\r\n" % (boundary, k, v)).encode("utf-8"))
+    parts.append(("--%s\r\nContent-Disposition: form-data; name=\"document\"; filename=\"%s\"\r\n"
+                  "Content-Type: application/vnd.android.package-archive\r\n\r\n" % (boundary, filename)).encode("utf-8"))
+    body = b"".join(parts) + data + ("\r\n--%s--\r\n" % boundary).encode("utf-8")
+    req = urllib.request.Request(
+        "https://api.telegram.org/bot%s/sendDocument" % TOKEN, data=body,
+        headers={"Content-Type": "multipart/form-data; boundary=" + boundary},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=120) as r:
+            return json.loads(r.read().decode("utf-8")).get("result")
+    except urllib.error.HTTPError as e:
+        print("telegram error sendDocument", e.code, e.read()[:300], file=sys.stderr)
+        return None
+
+
+def download_apk():
+    url = "https://github.com/%s/releases/download/latest/moistranicy.apk" % REPO
+    try:
+        with urllib.request.urlopen(url, timeout=120) as r:
+            return r.read()
+    except Exception as e:  # noqa: BLE001
+        print("не удалось скачать APK:", e, file=sys.stderr)
+        return None
+
+
 def gh(method, path, body=None):
     req = urllib.request.Request(
         "https://api.github.com" + path,
@@ -310,8 +341,11 @@ def notify_new_build(state):
     version = "0.5.%s" % run.get("run_number", "")
     text = "📲 Новая версия МоиСтраницы %s\n\n%s\n\nСкачать (ставится поверх):\nhttps://github.com/%s/releases/download/latest/moistranicy.apk" % (
         version, "\n".join("• " + t for t in titles[-15:]), REPO)
+    apk = download_apk()
     for uid in state["admins"].keys():
         send(int(uid), text)
+        if apk:
+            send_document(int(uid), apk, "moistranicy-%s.apk" % version, "МоиСтраницы %s" % version)
 
 
 def main():
