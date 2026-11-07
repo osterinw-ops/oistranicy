@@ -32,6 +32,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
@@ -160,12 +162,7 @@ fun AuthorsCloudScreen(onAuthor: (String) -> Unit, onGenre: (String) -> Unit) {
             return@Scaffold
         }
         Column(Modifier.padding(pad).fillMaxSize().padding(horizontal = 12.dp)) {
-            Text(
-                "Прочитано книг: ${read.size} · авторов: ${authors.size} · в облаке: ${authorWords.size}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
-            )
+            Spacer(Modifier.height(4.dp))
             // 2/3 — облако авторов
             if (authorWords.isEmpty()) {
                 Box(
@@ -185,9 +182,8 @@ fun AuthorsCloudScreen(onAuthor: (String) -> Unit, onGenre: (String) -> Unit) {
                 light = VioletLight,
                 mid = Violet,
                 dark = VioletDark,
-                minSp = 13f,
-                maxSp = 32f,
-                scroll = authorsScroll,
+                minSp = 11f,
+                maxSp = 26f,
                 modifier = Modifier.weight(2f),
             ) { w -> w.id?.let(onAuthor) }
             Spacer(Modifier.height(8.dp))
@@ -210,9 +206,8 @@ fun AuthorsCloudScreen(onAuthor: (String) -> Unit, onGenre: (String) -> Unit) {
                     light = CoralLight,
                     mid = Coral,
                     dark = CoralDark,
-                    minSp = 12f,
-                    maxSp = 26f,
-                    scroll = tagsScroll,
+                    minSp = 10f,
+                    maxSp = 21f,
                     modifier = Modifier.weight(1f),
                 ) { w -> onGenre(w.key) }
             }
@@ -222,7 +217,9 @@ fun AuthorsCloudScreen(onAuthor: (String) -> Unit, onGenre: (String) -> Unit) {
 }
 
 /**
- * Облако слов. Размер — по count, цвет — по shade (если задан) или по count.
+ * Облако слов без прокрутки: строки заполняют всю ширину (слова разнесены по краям),
+ * строки распределены по высоте. Размер — по count, цвет — по shade (если задан) или по count.
+ * Если места не хватает, слова с наименьшим count в облако не попадают.
  */
 @Composable
 private fun Cloud(
@@ -233,7 +230,6 @@ private fun Cloud(
     dark: Color,
     minSp: Float,
     maxSp: Float,
-    scroll: androidx.compose.foundation.ScrollState,
     modifier: Modifier = Modifier,
     onClick: (CloudWord) -> Unit,
 ) {
@@ -244,17 +240,12 @@ private fun Cloud(
         modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
-            .background(bg),
+            .background(bg)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
-        Column(
-            Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 12.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.Center,
-        ) {
-            FlowRow(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
-                verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
-            ) {
+        Layout(
+            modifier = Modifier.fillMaxSize(),
+            content = {
                 ordered.forEach { w ->
                     val size = if (cMax == cMin) 0.6f else sqrt((w.count - cMin).toFloat() / (cMax - cMin))
                     val shade = w.shade ?: size
@@ -262,16 +253,66 @@ private fun Cloud(
                     Text(
                         w.label,
                         fontSize = (minSp + (maxSp - minSp) * size).sp,
-                        lineHeight = (minSp + 4 + (maxSp - minSp) * size * 1.1f).sp,
+                        lineHeight = (minSp + 3 + (maxSp - minSp) * size * 1.1f).sp,
                         fontWeight = if (size > 0.66f) FontWeight.Bold else if (size > 0.33f) FontWeight.SemiBold else FontWeight.Normal,
                         color = color,
-                        textAlign = TextAlign.Center,
+                        maxLines = 1,
                         modifier = Modifier
-                            .align(Alignment.CenterVertically)
                             .clip(RoundedCornerShape(6.dp))
                             .clickable { onClick(w) }
                             .padding(horizontal = 2.dp),
                     )
+                }
+            },
+        ) { measurables, constraints ->
+            val maxW = constraints.maxWidth
+            val maxH = if (constraints.hasBoundedHeight) constraints.maxHeight else Int.MAX_VALUE
+            val gap = 8.dp.roundToPx()
+            val lineGap = 2.dp.roundToPx()
+            val ps = measurables.map { it.measure(Constraints(maxWidth = maxW)) }
+            // разбивка выбранных слов (в порядке облака) на строки
+            fun lines(chosen: Set<Int>): List<List<Int>> {
+                val out = mutableListOf<MutableList<Int>>()
+                var cur = mutableListOf<Int>()
+                var w = 0
+                for (i in ps.indices) {
+                    if (i !in chosen) continue
+                    val add = if (cur.isEmpty()) ps[i].width else w + gap + ps[i].width
+                    if (cur.isNotEmpty() && add > maxW) {
+                        out += cur; cur = mutableListOf(i); w = ps[i].width
+                    } else {
+                        cur += i; w = add
+                    }
+                }
+                if (cur.isNotEmpty()) out += cur
+                return out
+            }
+            fun heightOf(ls: List<List<Int>>) =
+                ls.sumOf { l -> l.maxOf { ps[it].height } } + lineGap * (ls.size - 1).coerceAtLeast(0)
+            // по убыванию важности добавляем слова, пока облако помещается по высоте
+            val chosen = HashSet<Int>()
+            ordered.indices.sortedByDescending { ordered[it].count }.forEach { i ->
+                chosen += i
+                if (heightOf(lines(chosen)) > maxH) chosen -= i
+            }
+            val ls = lines(chosen)
+            val contentH = heightOf(ls)
+            val height = if (maxH == Int.MAX_VALUE) contentH else maxH
+            val extra = ((height - contentH).coerceAtLeast(0)) / (ls.size + 1)
+            layout(maxW, height) {
+                var y = extra
+                ls.forEach { l ->
+                    val lh = l.maxOf { ps[it].height }
+                    val free = maxW - l.sumOf { ps[it].width }
+                    // строка растягивается на всю ширину; совсем короткую (последнюю) — по центру
+                    val justify = l.size > 1 && free <= maxW * 0.4f
+                    val step = if (justify) free / (l.size - 1) else gap
+                    var x = if (justify) 0 else ((free - gap * (l.size - 1)) / 2).coerceAtLeast(0)
+                    l.forEach { i ->
+                        ps[i].place(x, y + (lh - ps[i].height) / 2)
+                        x += ps[i].width + step
+                    }
+                    y += lh + lineGap + extra
                 }
             }
         }

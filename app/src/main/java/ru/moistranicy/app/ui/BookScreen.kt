@@ -73,6 +73,9 @@ import ru.moistranicy.app.data.ReadStatus
 import ru.moistranicy.app.data.ShelfRepository
 import ru.moistranicy.app.data.WorkDetails
 import ru.moistranicy.app.data.isHiddenType
+import ru.moistranicy.app.R
+import androidx.compose.ui.res.painterResource
+import androidx.compose.foundation.layout.BoxWithConstraints
 import ru.moistranicy.app.data.isPseudoAuthor
 
 /** Загруженные карточки FantLab, чтобы «Назад» не грузил заново. */
@@ -197,6 +200,78 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                 .padding(horizontal = 16.dp),
         ) {
             if (loading) LinearProgressIndicator(Modifier.fillMaxWidth().padding(bottom = 8.dp))
+            if (book.isCycle) {
+                // страница цикла: постер во всю ширину, как на полке, ниже — сведения
+                val tc = cycles[id]
+                if (tc != null) LaunchedEffect(id) { CycleRepository.ensureCovers(id) }
+                val covers = tc?.let { CycleRepository.collageCovers(it) }
+                    ?: details?.children.orEmpty().filter { !it.book.isCycle && it.published }
+                        .mapNotNull { it.book.coverUrl ?: BookCache.get(it.book.id)?.coverUrl }.take(5)
+                        .ifEmpty { listOfNotNull(book.coverUrl) }
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    SeriesCollagePoster(
+                        title = book.title,
+                        covers = covers,
+                        genres = book.genres.ifEmpty { tc?.genres.orEmpty() },
+                        width = maxWidth,
+                        corner = 14.dp,
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        book.title,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f),
+                    )
+                    val d0 = details
+                    val following = tc != null
+                    IconButton(
+                        enabled = following || (d0 != null && d0.children.isNotEmpty()),
+                        onClick = { if (following) CycleRepository.unfollow(id) else d0?.let { CycleRepository.follow(it) } },
+                    ) {
+                        Icon(
+                            painterResource(R.drawable.ic_eye),
+                            if (following) "Слежу за циклом (нажмите, чтобы перестать)" else "Следить за циклом",
+                            tint = if (following) EyeBlue else EyeGrey,
+                            modifier = Modifier.size(28.dp),
+                        )
+                    }
+                }
+                book.authors.forEach { a ->
+                    val aid = a.id?.takeIf { it.startsWith("fl-") }
+                    Text(
+                        a.name,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (aid != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.clickable(enabled = aid != null) { aid?.let(onAuthor) }.padding(vertical = 2.dp),
+                    )
+                }
+                val meta = listOfNotNull(book.workType, book.year?.let { "$it г." }).joinToString(", ")
+                if (meta.isNotEmpty()) {
+                    Text(meta, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    book.communityRating?.let {
+                        Text("★ %.2f  FantLab".format(it), style = MaterialTheme.typography.titleSmall, color = Coral)
+                        Spacer(Modifier.width(16.dp))
+                    }
+                    // оценка цикла — средняя по оценкам прочитанных книг
+                    val ids = tc?.books?.map { it.id } ?: details?.children.orEmpty().map { it.book.id }
+                    val avg = averageRating(ids, shelf)
+                    if (avg != null) {
+                        MiniStars(avg, size = 14.dp)
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "моя " + "%.1f".format(avg).replace('.', ','),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            } else
             Row {
                 BookCover(book, Modifier.width(120.dp))
                 Spacer(Modifier.width(16.dp))
@@ -268,15 +343,6 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                 )
             }
 
-            val d = details
-            if (book.isCycle && d != null && d.children.isNotEmpty()) {
-                Spacer(Modifier.height(12.dp))
-                if (cycles.containsKey(id)) {
-                    OutlinedButton(onClick = { CycleRepository.unfollow(id) }) { Text("✓ Слежу за циклом") }
-                } else {
-                    Button(onClick = { CycleRepository.follow(d) }) { Text("Следить за циклом") }
-                }
-            }
 
             Spacer(Modifier.height(16.dp))
             Text("Статус", style = MaterialTheme.typography.titleSmall)
@@ -398,7 +464,7 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                                 Text(m, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
-                        if (st != null) StatusBadge(st)
+                        if (!c.book.isCycle) StatusMark(st, shelf[c.book.id]?.rating)
                     }
                 }
             }
@@ -606,6 +672,8 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                                 published = b.published,
                                 indent = 0,
                                 mark = b.mark(),
+                                statusIcon = true,
+                                rating = shelf[b.id]?.rating,
                             ) {
                                 sheetCycleId = null
                                 onBook(b.id)

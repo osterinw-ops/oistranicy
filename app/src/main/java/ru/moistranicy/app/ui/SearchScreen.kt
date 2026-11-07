@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import ru.moistranicy.app.data.isHiddenType
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -273,7 +274,7 @@ private fun BookResults(st: PagedState<Book>, retry: () -> Unit, onBook: (String
     val scope = rememberCoroutineScope()
     Results(st, retry) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
-            items(st.items) { b -> BookRow(b) { onBook(b.id) }; RowDivider() }
+            items(st.items.filter { !isHiddenType(it.workType) }) { b -> BookRow(b) { onBook(b.id) }; RowDivider() }
             if (st.hasMore) item { LoadMoreFooter(st.loadingMore) { st.more(scope) } }
         }
     }

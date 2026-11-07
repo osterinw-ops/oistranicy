@@ -255,11 +255,17 @@ fun CompactBookLine(
     published: Boolean = true,
     indent: Int = 16,
     mark: BookMark? = null,
+    /** Значок статуса справа (звёздочка с оценкой / глазик), в том числе «не прочитано». */
+    statusIcon: Boolean = false,
+    rating: Int? = null,
     onClick: () -> Unit,
 ) {
-    val onSurface = mark?.color ?: MaterialTheme.colorScheme.onSurface
+    // книги другого автора / не на русском — целиком своим цветом и чуть прозрачнее
+    val markAlpha = if (mark != null) 0.6f else 1f
+    val onSurface = (mark?.color ?: MaterialTheme.colorScheme.onSurface).copy(alpha = markAlpha)
+    val muted = (mark?.color ?: MaterialTheme.colorScheme.onSurfaceVariant).copy(alpha = markAlpha)
     val sub = listOfNotNull(sub?.ifEmpty { null }, mark?.label).joinToString(" · ")
-    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val dim = if (published) 1f else 0.45f
     Row(
         Modifier
             .fillMaxWidth()
@@ -272,22 +278,22 @@ fun CompactBookLine(
                 "$number.",
                 modifier = Modifier.width(24.dp),
                 style = MaterialTheme.typography.bodySmall,
-                color = muted.copy(alpha = if (published) 1f else 0.5f),
+                color = muted.copy(alpha = muted.alpha * dim),
             )
         }
         Column(Modifier.weight(1f)) {
             Text(
                 title,
                 style = MaterialTheme.typography.bodyMedium,
-                color = if (published) onSurface else onSurface.copy(alpha = 0.4f),
+                color = onSurface.copy(alpha = onSurface.alpha * (if (published) 1f else 0.4f)),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (!sub.isNullOrEmpty()) {
+            if (sub.isNotEmpty()) {
                 Text(
                     sub,
                     style = MaterialTheme.typography.labelSmall,
-                    color = muted.copy(alpha = if (published) 0.9f else 0.45f),
+                    color = muted.copy(alpha = muted.alpha * (if (published) 0.9f else 0.45f)),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -296,7 +302,10 @@ fun CompactBookLine(
         if (isNew) {
             Text(" новая", style = MaterialTheme.typography.labelSmall, color = Coral)
         }
-        if (status != null) {
+        if (statusIcon) {
+            Spacer(Modifier.width(6.dp))
+            StatusMark(status, rating, size = 24.dp)
+        } else if (status != null) {
             Text(" " + status.title.lowercase(), style = MaterialTheme.typography.labelSmall, color = statusColor(status))
         }
     }

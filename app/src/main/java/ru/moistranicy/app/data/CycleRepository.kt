@@ -205,13 +205,24 @@ object CycleRepository {
     }
 
     /** Книга как объект Book (для статуса/полки), берём подробную из кэша, если есть. */
-    fun bookOf(cycle: TrackedCycle, b: CycleBook): Book =
-        BookCache.get(b.id) ?: Book(
-            id = b.id, title = b.title, authors = cycle.authors, coverUrl = null, annotation = "",
-            genres = emptyList(), year = b.year, language = null, seriesId = cycle.id,
-            seriesName = cycle.name, seriesNumber = cycle.books.indexOfFirst { it.id == b.id } + 1,
-            workType = b.type, published = b.published,
+    fun bookOf(cycle: TrackedCycle, b: CycleBook): Book {
+        val number = cycle.books.indexOfFirst { it.id == b.id } + 1
+        val cached = BookCache.get(b.id)
+            ?: return Book(
+                id = b.id, title = b.title, authors = cycle.authors, coverUrl = b.coverUrl, annotation = "",
+                genres = emptyList(), year = b.year, language = null, seriesId = cycle.id,
+                seriesName = cycle.name, seriesNumber = number,
+                workType = b.type, published = b.published,
+            )
+        // книга из списка (библиография, состав цикла) не знает свой цикл — дописываем
+        return cached.copy(
+            seriesId = cached.seriesId ?: cycle.id,
+            seriesName = cached.seriesName ?: cycle.name,
+            seriesNumber = cached.seriesNumber ?: number,
+            coverUrl = cached.coverUrl ?: b.coverUrl,
+            authors = cached.authors.ifEmpty { cycle.authors },
         )
+    }
 
     private fun toCycleBooks(d: WorkDetails): List<CycleBook> {
         val items = cycleBooks(d.children)

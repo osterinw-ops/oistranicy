@@ -6,6 +6,10 @@ import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
 
 /** Локальная полка: хранится в JSON-файле на телефоне. */
@@ -22,6 +26,7 @@ object ShelfRepository {
         if (::file.isInitialized) return
         file = File(context.filesDir, "shelf.json")
         deletedFile = File(context.filesDir, "shelf_deleted.json")
+        repairFile = File(context.filesDir, "shelf_series_checked.txt")
         _entries.value = runCatching { load() }.getOrDefault(emptyMap())
         runCatching {
             if (deletedFile.exists()) {
@@ -60,6 +65,37 @@ object ShelfRepository {
         synchronized(deleted) { deleted[id] = System.currentTimeMillis() }
         saveDeleted()
         update(_entries.value - id)
+    }
+
+    private lateinit var repairFile: File
+
+    /**
+     * Книги, сохранённые без цикла (например, отмеченные из списка), попадали во «Вне циклов».
+     * В фоне узнаём у FantLab их цикл и обложку — понемногу за каждый запуск.
+     */
+    fun repairSeriesInBackground() {
+        CoroutineScope(Dispatchers.IO).launch {
+            val tried = runCatching { repairFile.readLines().toHashSet() }.getOrDefault(HashSet())
+            val need = _entries.value.values
+                .filter { it.book.id.startsWith("fl-") && it.book.seriesId == null && !it.book.isCycle && it.book.id !in tried }
+                .take(150)
+            if (need.isEmpty()) return@launch
+            for (e in need) {
+                tried += e.book.id
+                val d = runCatching { FantLab.work(e.book.id) }.getOrNull() ?: continue
+                val cur = _entries.value[e.book.id]?.book ?: continue
+                val nb = cur.copy(
+                    seriesId = d.book.seriesId,
+                    seriesName = d.book.seriesName,
+                    coverUrl = cur.coverUrl ?: d.book.coverUrl,
+                    workType = cur.workType ?: d.book.workType,
+                    genres = cur.genres.ifEmpty { d.book.genres },
+                )
+                if (nb != cur) refreshBook(nb)
+                delay(150)
+            }
+            runCatching { repairFile.writeText(tried.joinToString("\n")) }
+        }
     }
 
     /** Подменяет сохранённое описание книги более полным (без изменения статуса и дат). */

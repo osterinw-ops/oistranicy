@@ -44,6 +44,17 @@ import ru.moistranicy.app.data.ReadStatus
 import ru.moistranicy.app.data.ShelfRepository
 import java.util.Calendar
 import java.util.Locale
+import ru.moistranicy.app.R
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.Alignment
+import androidx.compose.material3.Icon
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.clickable
 
 @Composable
 fun ProfileScreen(onBook: (String) -> Unit, onUser: (String) -> Unit = {}, onPeople: () -> Unit = {}) {
@@ -68,22 +79,8 @@ fun ProfileScreen(onBook: (String) -> Unit, onUser: (String) -> Unit = {}, onPeo
             AccountCard()
             SocialCard(onUser = onUser, onPeople = onPeople)
 
-            // Цель на год
-            Card {
-                Text("Книжный вызов $year", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "$readThisYear из ${AppPrefs.yearGoal}",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Spacer(Modifier.height(8.dp))
-                LinearProgressIndicator(
-                    progress = { (readThisYear.toFloat() / AppPrefs.yearGoal).coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
-                )
-            }
+            // Прочитано по месяцам — последние 12 месяцев, текущий справа
+            MonthlyStats(all.filter { it.status == ReadStatus.READ }.mapNotNull { it.finishedAt })
 
             // Счётчики по статусам
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -121,46 +118,52 @@ fun ProfileScreen(onBook: (String) -> Unit, onUser: (String) -> Unit = {}, onPeo
 
 @Composable
 private fun SettingsCard() {
-    var goal by remember { mutableStateOf(AppPrefs.yearGoal.toString()) }
     Card {
         Text("Настройки", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-            value = goal,
-            onValueChange = { goal = it.filter(Char::isDigit).take(4) },
-            label = { Text("Цель: книг за год") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        TextButton(onClick = {
-            goal.toIntOrNull()?.let { AppPrefs.saveYearGoal(it) }
-            goal = AppPrefs.yearGoal.toString()
-        }) { Text("Сохранить") }
-
-        Spacer(Modifier.height(4.dp))
         Text("Размер шрифта", style = MaterialTheme.typography.titleSmall)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            FONT_SCALES.forEach { (label, scale) ->
-                FilterChip(
-                    selected = AppPrefs.fontScale == scale,
-                    onClick = { AppPrefs.saveFontScale(scale) },
-                    label = { Text(label) },
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+            FONT_SCALES.forEachIndexed { i, (label, scale) ->
+                val selected = AppPrefs.fontScale == scale
+                Text(
+                    "А",
+                    fontSize = (16 + i * 5).sp,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                    color = if (selected) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { AppPrefs.saveFontScale(scale) }
+                        .semantics { contentDescription = "Шрифт: $label" }
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
                 )
             }
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(10.dp))
         Text("Тема", style = MaterialTheme.typography.titleSmall)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            ThemeMode.entries.forEach { m ->
-                FilterChip(
-                    selected = AppPrefs.theme == m,
-                    onClick = { AppPrefs.saveTheme(m) },
-                    label = { Text(m.title) },
-                )
+        Spacer(Modifier.height(4.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            listOf(ThemeMode.SYSTEM, ThemeMode.DARK, ThemeMode.LIGHT).forEach { m ->
+                val selected = AppPrefs.theme == m
+                val tint = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                Box(
+                    Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable { AppPrefs.saveTheme(m) }
+                        .semantics { contentDescription = "Тема: " + m.title },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    when (m) {
+                        ThemeMode.SYSTEM -> Text("А", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = tint)
+                        ThemeMode.DARK -> Icon(painterResource(R.drawable.ic_moon), null, tint = tint, modifier = Modifier.size(22.dp))
+                        ThemeMode.LIGHT -> Icon(painterResource(R.drawable.ic_sun), null, tint = tint, modifier = Modifier.size(22.dp))
+                    }
+                }
             }
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(10.dp))
         Text("Показывать в приложении", style = MaterialTheme.typography.titleSmall)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             OPTIONAL_TYPES.forEach { (type, label) ->
@@ -207,3 +210,73 @@ private fun StatTile(label: String, value: String) {
 
 private fun yearOf(millis: Long): Int =
     Calendar.getInstance().apply { timeInMillis = millis }.get(Calendar.YEAR)
+
+
+private val MONTHS = listOf("янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек")
+
+/** Столбики «прочитано за месяц» за последние 12 месяцев; текущий месяц — справа и выделен. */
+@Composable
+private fun MonthlyStats(finished: List<Long>) {
+    val now = Calendar.getInstance()
+    val curKey = now.get(Calendar.YEAR) * 12 + now.get(Calendar.MONTH)
+    val counts = IntArray(12)
+    val cal = Calendar.getInstance()
+    for (t in finished) {
+        cal.timeInMillis = t
+        val k = cal.get(Calendar.YEAR) * 12 + cal.get(Calendar.MONTH)
+        val idx = 11 - (curKey - k)
+        if (idx in 0..11) counts[idx]++
+    }
+    val max = counts.maxOrNull()?.coerceAtLeast(1) ?: 1
+    Card {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Прочитано по месяцам", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            Text(
+                "за год: ${counts.sum()}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(
+            Modifier.fillMaxWidth().height(130.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            for (i in 0 until 12) {
+                val monthIndex = ((curKey - (11 - i)) % 12 + 12) % 12
+                val current = i == 11
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (counts[i] > 0) {
+                        Text(
+                            counts[i].toString(),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (current) Coral else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height((86f * counts[i] / max).coerceAtLeast(3f).dp)
+                            .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                            .background(
+                                when {
+                                    current -> Coral
+                                    counts[i] == 0 -> MaterialTheme.colorScheme.surfaceVariant
+                                    else -> Violet
+                                },
+                            ),
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        MONTHS[monthIndex],
+                        fontSize = 9.sp,
+                        color = if (current) Coral else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+    }
+}

@@ -86,6 +86,7 @@ class MainActivity : ComponentActivity() {
         SocialSync.init(applicationContext)
         SyncManager.syncInBackground()
         CycleRepository.refreshOutdatedInBackground()
+        ShelfRepository.repairSeriesInBackground()
         SocialSync.pushInBackground()
         Notifier.ensureChannel(applicationContext)
         CycleCheckWorker.schedule(applicationContext)

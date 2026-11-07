@@ -23,6 +23,8 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.collectAsState
 import ru.moistranicy.app.data.Book
+import ru.moistranicy.app.data.AppPrefs
+import ru.moistranicy.app.data.isHiddenType
 import ru.moistranicy.app.data.CycleRepository
 import ru.moistranicy.app.data.ReadStatus
 import ru.moistranicy.app.data.ShelfRepository
@@ -107,7 +109,13 @@ fun AuthorScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit) {
 }
 
 @Composable
-private fun AuthorContent(d: AuthorDetails, onBook: (String) -> Unit) {
+private fun AuthorContent(details: AuthorDetails, onBook: (String) -> Unit) {
+    // скрытые в настройках типы (статьи, интервью…) убираем сразу, без перезагрузки страницы
+    val hidden = AppPrefs.hiddenTypes
+    val d = remember(details, hidden) {
+        details.copy(sections = details.sections.map { s -> s.copy(books = s.books.filter { !isHiddenType(it.workType) }) }
+            .filter { it.books.isNotEmpty() })
+    }
     val shelf by ShelfRepository.entries.collectAsState()
     val tracked by CycleRepository.cycles.collectAsState()
     // все циклы изначально свёрнуты
@@ -205,6 +213,8 @@ private fun AuthorContent(d: AuthorDetails, onBook: (String) -> Unit) {
                         published = b.published,
                         indent = 36,
                         mark = markFor(b, d.id),
+                        statusIcon = true,
+                        rating = shelf[b.id]?.rating,
                     ) { onBook(b.id) }
                 }
             }

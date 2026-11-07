@@ -60,12 +60,17 @@ import ru.moistranicy.app.data.ReadStatus
 import ru.moistranicy.app.data.ShelfEntry
 import ru.moistranicy.app.data.TrackedCycle
 import ru.moistranicy.app.data.isHiddenType
+import ru.moistranicy.app.R
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.res.painterResource
 
 /** Выбранная вкладка полки — переживает переходы и открытие из уведомления. */
 object ShelfUi {
     var tab by mutableIntStateOf(0)
     /** Раскрытые циклы (по умолчанию все свёрнуты). */
     val expanded = mutableStateMapOf<String, Boolean>()
+    /** «Прочитал»: сортировка авторов по числу прочитанных книг (иначе — по фамилии). */
+    var readByCount by mutableStateOf(false)
 
     /** Повторное нажатие на «Полку»: вкладка «Читаю», всё свёрнуто. */
     fun reset() {
@@ -115,6 +120,8 @@ private data class Group(
     val children: List<Group> = emptyList(),
     /** Для группы-автора: всего прочитано книг. */
     val readBooks: Int = 0,
+    /** Средняя оценка прочитанных книг серии. */
+    val rating: Float? = null,
 )
 
 /**
@@ -125,6 +132,7 @@ private fun buildGroups(
     status: ReadStatus,
     shelf: Map<String, ShelfEntry>,
     cycles: Map<String, TrackedCycle>,
+    readByCount: Boolean = false,
 ): List<Group> {
     val used = HashSet<String>()
     val cycleGroups = mutableListOf<Group>()
@@ -167,13 +175,14 @@ private fun buildGroups(
                 bookCount = published.size,
                 spines = books.map { (_, b) -> Spine(b.id, shelf[b.id]?.status, b.published, b.id in c.newIds) },
                 authorId = c.authors.firstOrNull()?.id,
+                rating = averageRating(c.books.map { it.id }, shelf),
             )
         }
     }
     cycleGroups.sortWith(compareByDescending<Group> { it.hasNew }.thenBy { it.title })
 
     // книги с этим статусом, чей цикл не отслеживается или которые вне циклов
-    val rest = shelf.values.filter { it.status == status && it.book.id !in used }
+    val rest = shelf.values.filter { it.status == status && it.book.id !in used && !isHiddenType(it.book.workType) }
         .sortedByDescending { it.updatedAt }
     val bySeries = rest.filter { it.book.seriesName != null }.groupBy { it.book.seriesId ?: it.book.seriesName!! }
     val seriesGroups = bySeries.values.map { list ->
@@ -193,6 +202,7 @@ private fun buildGroups(
             spines = list.sortedBy { it.book.seriesNumber ?: Int.MAX_VALUE }
                 .map { e -> Spine(e.book.id, e.status, true, false) },
             authorId = b0.authors.firstOrNull()?.id,
+            rating = averageRating(list.map { it.book.id }, shelf),
         )
     }.sortedBy { it.title }
     val singles = rest.filter { it.book.seriesName == null }
@@ -228,7 +238,10 @@ private fun buildGroups(
                 children = series,
                 readBooks = books.size + series.sumOf { it.lines.size },
             )
-        }.sortedBy { surnameKey(surnameFirst(it.title.orEmpty())) }
+        }.sortedWith(
+            if (readByCount) compareByDescending<Group> { it.readBooks }.thenBy { surnameKey(surnameFirst(it.title.orEmpty())) }
+            else compareBy { surnameKey(surnameFirst(it.title.orEmpty())) },
+        )
         return authorGroups
     }
     return if (singles.isEmpty()) result else result + Group(
@@ -274,7 +287,7 @@ fun ShelfScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit = {}) {
     val reading = shelf.values.filter { it.status == ReadStatus.READING }.sortedByDescending { it.updatedAt }
     // вкладка «Читаю» видна, только если есть книги с этим статусом
     val statuses = ReadStatus.entries.filter { it != ReadStatus.READING || reading.isNotEmpty() }
-    val groupsByStatus = statuses.associateWith { buildGroups(it, shelf, cycles) }
+    val groupsByStatus = statuses.associateWith { buildGroups(it, shelf, cycles, ShelfUi.readByCount) }
     val selected = ReadStatus.entries.getOrElse(ShelfUi.tab) { ReadStatus.WANT }
     val current = if (selected in statuses) selected else ReadStatus.WANT
     val tabIndex = statuses.indexOf(current).coerceAtLeast(0)
@@ -341,6 +354,30 @@ fun ShelfScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit = {}) {
                             )
                         }
                     }
+                    if (current == ReadStatus.READ) {
+                        item(key = "read-header") {
+                            Row(
+                                Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    "Авторов: ${groups.size}",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Text(
+                                    if (ShelfUi.readByCount) "по числу книг" else "по фамилии",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.clickable { ShelfUi.readByCount = !ShelfUi.readByCount },
+                                )
+                                IconButton(onClick = { ShelfUi.readByCount = !ShelfUi.readByCount }) {
+                                    Icon(painterResource(R.drawable.ic_sort), "Сортировка", tint = MaterialTheme.colorScheme.primary)
+                                }
+                            }
+                        }
+                    }
                     groups.forEach { g ->
                         val open = !g.isSeries || ShelfUi.expanded[g.key] == true
                         if (g.isAuthor) {
@@ -353,7 +390,7 @@ fun ShelfScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit = {}) {
                                     val openC = ShelfUi.expanded[c.key] == true
                                     item(key = g.key + "/h/" + c.key) {
                                         Box(Modifier.padding(start = 12.dp)) {
-                                            SeriesHeader(c, openC, onToggle = { ShelfUi.expanded[c.key] = !openC }, onBook = onBook)
+                                            SeriesHeader(c, openC, onToggle = { ShelfUi.expanded[c.key] = !openC }, onBook = onBook, showAuthor = false)
                                         }
                                     }
                                     if (openC) {
@@ -364,6 +401,9 @@ fun ShelfScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit = {}) {
                                                 sub = l.sub,
                                                 published = l.published,
                                                 mark = l.mark,
+                                                statusIcon = true,
+                                                status = shelf[l.id]?.status,
+                                                rating = shelf[l.id]?.rating,
                                                 indent = 40,
                                             ) { onBook(l.id) }
                                         }
@@ -416,7 +456,7 @@ fun ShelfScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit = {}) {
 }
 
 @Composable
-private fun SeriesHeader(g: Group, open: Boolean, onToggle: () -> Unit, onBook: (String) -> Unit) {
+private fun SeriesHeader(g: Group, open: Boolean, onToggle: () -> Unit, onBook: (String) -> Unit, showAuthor: Boolean = true) {
     val cid = g.cycleId
     if (g.tracked && cid != null) {
         // догружаем обложки книг серии для коллажа
@@ -426,14 +466,14 @@ private fun SeriesHeader(g: Group, open: Boolean, onToggle: () -> Unit, onBook: 
         Modifier
             .fillMaxWidth()
             .clickable(onClick = onToggle)
-            .padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+            .padding(start = 16.dp, end = 8.dp, top = 9.dp, bottom = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         SeriesCollagePoster(
             title = g.title.orEmpty(),
             covers = g.covers,
             genres = g.genres,
-            caption = g.total?.let { t -> "${t - (g.unread ?: 0)} из $t" },
+            width = 119.dp,
             modifier = Modifier.then(if (cid != null) Modifier.clickable { onBook(cid) } else Modifier),
         )
         Spacer(Modifier.width(12.dp))
@@ -445,7 +485,7 @@ private fun SeriesHeader(g: Group, open: Boolean, onToggle: () -> Unit, onBook: 
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            g.author?.let {
+            if (showAuthor) g.author?.let {
                 Text(
                     it,
                     style = MaterialTheme.typography.bodySmall,
@@ -454,24 +494,23 @@ private fun SeriesHeader(g: Group, open: Boolean, onToggle: () -> Unit, onBook: 
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            val unread = g.unread
-            val info = when {
-                g.dropped -> "цикл брошен · не прочитано: ${unread ?: 0}"
-                unread == 0 -> "прочитан полностью"
-                unread == null -> "книг на полке: ${g.lines.size}"
-                unread == 0 -> "всё прочитано"
-                else -> "не прочитано: $unread из ${g.total}"
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    info,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (unread != null && unread > 0) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
+            val total = g.total
+            if (total != null) {
+                Spacer(Modifier.height(4.dp))
+                CycleProgress(
+                    read = total - (g.unread ?: 0), total = total, rating = g.rating, dropped = g.dropped,
+                    modifier = Modifier.fillMaxWidth(0.85f),
                 )
-                if (g.hasNew) {
-                    Text("  · новая книга", style = MaterialTheme.typography.labelSmall, color = Coral)
-                }
+            } else {
+                Text(
+                    "книг на полке: ${g.lines.size}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (g.rating != null) MiniStars(g.rating)
+            }
+            if (g.hasNew) {
+                Text("новая книга", style = MaterialTheme.typography.labelSmall, color = Coral)
             }
         }
         Icon(

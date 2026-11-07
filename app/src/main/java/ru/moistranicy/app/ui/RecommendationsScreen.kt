@@ -176,7 +176,8 @@ fun RecommendationsScreen(onBook: (String) -> Unit) {
     val blockedBooks by RecBlock.books.collectAsState()
     val blockedAuthors by RecBlock.authors.collectAsState()
     val pool = RecsState.items.orEmpty().filter {
-        it.book.id !in shelfIds && it.book.id !in blockedBooks && !RecBlock.isBlocked(it.book)
+        it.book.id !in shelfIds && it.book.id !in blockedBooks && !RecBlock.isBlocked(it.book) &&
+            !ru.moistranicy.app.data.isHiddenType(it.book.workType)
     }
     blockedAuthors.size // подписка на изменения списка авторов
     val genreFilter = RecsState.genre
