@@ -34,7 +34,7 @@ class DemoSeedActivity : Activity() {
         Item("Пикник на обочине", "Стругацк", ReadStatus.READ, 10, key = "book"),
         Item("Трудно быть богом", "Стругацк", ReadStatus.READ, 9),
         Item("Понедельник начинается в субботу", "Стругацк", ReadStatus.READ, 9),
-        Item("Ночной Дозор", "Лукьяненко", ReadStatus.READ, 9),
+        Item("Ночной Дозор", "Лукьяненко", ReadStatus.READ, 9, key = "cyclebook"),
         Item("Дневной Дозор", "Лукьяненко", ReadStatus.READ, 8),
         Item("Сумеречный Дозор", "Лукьяненко", ReadStatus.READING, null),
         Item("Последнее желание", "Сапковский", ReadStatus.READ, 10),
@@ -84,6 +84,7 @@ class DemoSeedActivity : Activity() {
                         ids.append("$k=${d.book.id}\n")
                         if (k == "author") d.book.authors.firstOrNull()?.id?.let { a -> ids.append("authorpage=$a\n") }
                     }
+                    if (it.key == "cyclebook") d.book.seriesId?.let { c -> ids.append("cycle=$c\n") }
                     if (it.key == "book") d.book.authors.firstOrNull()?.id?.let { a -> ids.append("authorpage2=$a\n") }
                 }
             }

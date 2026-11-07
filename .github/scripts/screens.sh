@@ -23,7 +23,7 @@ done
 IDS=$(adb shell run-as $PKG cat files/seed_ids.txt)
 echo "$IDS"
 get() { echo "$IDS" | tr -d '\r' | grep "^$1=" | head -1 | cut -d= -f2; }
-BOOK=$(get book); AUTHOR=$(get authorpage2)
+BOOK=$(get book); AUTHOR=$(get authorpage2); CYCLE=$(get cycle)
 
 adb shell am force-stop $PKG
 adb shell am start -W -n $PKG/.ui.MainActivity
@@ -39,6 +39,7 @@ shot 01-shelf-want   shelf:WANT 10
 shot 02-shelf-read   shelf:READ 10
 shot 03-shelf-reading shelf:READING 8
 [ -n "$BOOK" ] && shot 04-book "book:$BOOK" 10
+[ -n "$CYCLE" ] && shot 09-cycle "book:$CYCLE" 14
 [ -n "$AUTHOR" ] && shot 05-author "author:$AUTHOR" 14
 shot 06-authors-cloud tab:authors 12
 shot 07-recommendations tab:recs 25
