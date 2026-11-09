@@ -488,13 +488,17 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                     ) {
                         Column(Modifier.weight(1f)) {
                             val mark = marks[ci]
+                            val titleColor = mark?.color ?: MaterialTheme.colorScheme.onSurface
                             Text(
                                 c.book.title,
                                 style = if (c.deep == 1) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyMedium,
                                 fontWeight = if (c.book.isCycle) FontWeight.SemiBold else FontWeight.Normal,
-                                color = mark?.color ?: Color.Unspecified,
+                                color = if (!c.book.isCycle && !c.published && st != ReadStatus.READ) titleColor.copy(alpha = 0.5f) else titleColor,
                             )
-                            val m = listOfNotNull(c.book.workType, c.book.year, mark?.label).joinToString(", ")
+                            // ещё не вышла (и не прочитана) — подписываем «ожидается»
+                            val expected = !c.book.isCycle && !c.published && st != ReadStatus.READ
+                            val m = listOfNotNull(c.book.workType, c.book.year, if (expected) "ожидается" else null, mark?.label)
+                                .joinToString(", ")
                             if (m.isNotEmpty()) {
                                 Text(m, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
