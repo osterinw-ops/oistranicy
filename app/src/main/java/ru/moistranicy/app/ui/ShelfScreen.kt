@@ -71,8 +71,10 @@ object ShelfUi {
     var tab by mutableIntStateOf(0)
     /** Раскрытые циклы (по умолчанию все свёрнуты). */
     val expanded = mutableStateMapOf<String, Boolean>()
-    /** «Прочитал»: сортировка авторов по числу прочитанных книг (иначе — по фамилии). */
-    var readByCount by mutableStateOf(false)
+    /** «Прочитал»: сортировка авторов по числу прочитанных книг (иначе — по фамилии); запоминается. */
+    var readByCount: Boolean
+        get() = ru.moistranicy.app.data.AppPrefs.readByCount
+        set(value) = ru.moistranicy.app.data.AppPrefs.saveReadByCount(value)
 
     /** Повторное нажатие на «Полку»: вкладка «Читаю», всё свёрнуто. */
     fun reset() {

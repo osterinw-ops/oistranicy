@@ -28,6 +28,15 @@ object AppPrefs {
     var hiddenTypes by mutableStateOf<Set<String>>(emptySet())
         private set
 
+    /** «Прочитал»: сортировка авторов по числу книг (иначе — по фамилии). Запоминается. */
+    var readByCount by mutableStateOf(false)
+        private set
+
+    fun saveReadByCount(value: Boolean) {
+        readByCount = value
+        sp.edit().putBoolean("readByCount", value).apply()
+    }
+
     val theme: ThemeMode get() = ThemeMode.entries.getOrElse(themeMode) { ThemeMode.SYSTEM }
 
     fun init(context: Context) {
@@ -37,6 +46,7 @@ object AppPrefs {
         fontScale = sp.getFloat("fontScale", 1f)
         themeMode = sp.getInt("themeMode", ThemeMode.SYSTEM.ordinal)
         hiddenTypes = sp.getStringSet("hiddenTypes", emptySet())?.toSet() ?: emptySet()
+        readByCount = sp.getBoolean("readByCount", false)
     }
 
     fun setTypeHidden(type: String, hidden: Boolean) {
