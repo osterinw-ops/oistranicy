@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.LaunchedEffect
@@ -322,7 +323,7 @@ private fun surnameKey(surnameFirstName: String): String =
     surnameFirstName.lowercase().replace('ё', 'е')
 
 @Composable
-fun ShelfScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit = {}) {
+fun ShelfScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit = {}, onSearch: () -> Unit = {}) {
     val shelf by ShelfRepository.entries.collectAsState()
     val cycles by CycleRepository.cycles.collectAsState()
     val scope = rememberCoroutineScope()
@@ -384,6 +385,31 @@ fun ShelfScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit = {}) {
             if (current == ReadStatus.READING && reading.isNotEmpty()) {
                 LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(vertical = 6.dp)) {
                     items(reading, key = { it.book.id }) { e -> ReadingRow(e, cycles) { onBook(e.book.id) } }
+                }
+            } else if (groups.isEmpty() && current == ReadStatus.WANT) {
+                // пустой читательский план: плюсик ведёт в поиск
+                Column(
+                    Modifier.fillMaxSize().padding(32.dp),
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        "Добавь книгу в свой читательский план",
+                        style = MaterialTheme.typography.titleMedium,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Box(
+                        Modifier
+                            .size(64.dp)
+                            .clip(CircleShape)
+                            .background(Brush.linearGradient(listOf(Violet, VioletDeep)))
+                            .clickable(onClick = onSearch),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(Icons.Filled.Add, "Найти книгу", tint = Color.White, modifier = Modifier.size(34.dp))
+                    }
                 }
             } else if (groups.isEmpty() || current == ReadStatus.READING) {
                 CenterMessage(

@@ -223,7 +223,13 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
         },
     ) { pad ->
         NavHost(nav, startDestination = "shelf", modifier = Modifier.padding(pad)) {
-            composable("shelf") { ShelfScreen(onBook = { nav.openBook(it) }, onAuthor = { nav.openAuthor(it) }) }
+            composable("shelf") {
+                ShelfScreen(
+                    onBook = { nav.openBook(it) },
+                    onAuthor = { nav.openAuthor(it) },
+                    onSearch = { goTab("search"); currentTab = "search" },
+                )
+            }
             composable("authors") {
                 AuthorsCloudScreen(
                     onAuthor = { nav.openAuthor(it) },
