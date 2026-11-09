@@ -50,6 +50,7 @@ import ru.moistranicy.app.data.Page
 import ru.moistranicy.app.data.Typos
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.ui.text.font.FontWeight
 
 /** Постраничная загрузка результатов. */
@@ -101,14 +102,17 @@ class PagedState<T>(private val loader: suspend (query: String, page: Int) -> Pa
     }
 }
 
+/** ALL — одна страница: сверху авторы, ниже книги (FantLab). */
 private enum class SearchMode(val title: String) {
-    WORKS("Книги"), AUTHORS("Авторы"), GOOGLE("Google Книги")
+    ALL("Книги и авторы"), GOOGLE("Google Книги")
 }
 
 /** Состояние поиска живёт, пока открыто приложение. */
 private object SearchHolder {
     var query by mutableStateOf("")
-    var mode by mutableStateOf(SearchMode.WORKS)
+    var mode by mutableStateOf(SearchMode.ALL)
+    /** Показаны все найденные авторы (иначе — первые несколько). */
+    var allAuthors by mutableStateOf(false)
     var works = PagedState<Book> { q, p -> FantLab.searchWorks(q, p) }
     var authors = PagedState<AuthorHit> { q, p -> FantLab.searchAuthors(q, p) }
     var google = PagedState<Book> { q, p -> GoogleBooks.search(q, p) }
@@ -124,7 +128,8 @@ private object SearchHolder {
 /** Полный сброс поиска (повторное нажатие на вкладку «Поиск»). */
 fun resetSearch() {
     SearchHolder.query = ""
-    SearchHolder.mode = SearchMode.WORKS
+    SearchHolder.mode = SearchMode.ALL
+    SearchHolder.allAuthors = false
     SearchHolder.works = PagedState { q, p -> FantLab.searchWorks(q, p) }
     SearchHolder.authors = PagedState { q, p -> FantLab.searchAuthors(q, p) }
     SearchHolder.google = PagedState { q, p -> GoogleBooks.search(q, p) }
@@ -150,8 +155,11 @@ fun SearchScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit) {
         focus.clearFocus()
         SearchHolder.typing = false
         when (SearchHolder.mode) {
-            SearchMode.WORKS -> SearchHolder.works.search(scope, q)
-            SearchMode.AUTHORS -> SearchHolder.authors.search(scope, q)
+            SearchMode.ALL -> {
+                SearchHolder.allAuthors = false
+                SearchHolder.authors.search(scope, q)
+                SearchHolder.works.search(scope, q)
+            }
             SearchMode.GOOGLE -> SearchHolder.google.search(scope, q)
         }
     }
@@ -180,8 +188,7 @@ fun SearchScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit) {
                         onClick = {
                             SearchHolder.mode = m
                             val state = when (m) {
-                                SearchMode.WORKS -> SearchHolder.works.loadedQuery
-                                SearchMode.AUTHORS -> SearchHolder.authors.loadedQuery
+                                SearchMode.ALL -> SearchHolder.works.loadedQuery
                                 SearchMode.GOOGLE -> SearchHolder.google.loadedQuery
                             }
                             if (state != SearchHolder.query.trim()) run()
@@ -218,11 +225,12 @@ fun SearchScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit) {
 
             // «Возможно, вы имели в виду …», если поиск ничего не нашёл
             val current: PagedState<*> = when (SearchHolder.mode) {
-                SearchMode.WORKS -> SearchHolder.works
-                SearchMode.AUTHORS -> SearchHolder.authors
+                SearchMode.ALL -> SearchHolder.works
                 SearchMode.GOOGLE -> SearchHolder.google
             }
-            val doneEmpty = !current.loading && current.loadedQuery != null && current.items.isEmpty()
+            val noAuthors = SearchHolder.mode != SearchMode.ALL ||
+                (!SearchHolder.authors.loading && SearchHolder.authors.items.isEmpty())
+            val doneEmpty = !current.loading && current.loadedQuery != null && current.items.isEmpty() && noAuthors
             LaunchedEffect(doneEmpty, current.loadedQuery) {
                 val lq = current.loadedQuery
                 if (doneEmpty && lq != null && SearchHolder.didYouMeanFor != lq) {
@@ -253,20 +261,79 @@ fun SearchScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit) {
                 )
             }
             when (SearchHolder.mode) {
-                SearchMode.WORKS -> BookResults(SearchHolder.works, ::run, onBook)
+                SearchMode.ALL -> AllResults(::run, onBook, onAuthor)
                 SearchMode.GOOGLE -> BookResults(SearchHolder.google, ::run, onBook)
-                SearchMode.AUTHORS -> {
-                    val st = SearchHolder.authors
-                    Results(st, ::run) {
-                        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
-                            items(st.items) { h -> AuthorRow(h) { onAuthor(h.id) }; RowDivider() }
-                            if (st.hasMore) item { LoadMoreFooter(st.loadingMore) { st.more(scope) } }
-                        }
+            }
+        }
+    }
+}
+
+/** Одна страница результатов: сначала авторы (первые несколько, «Показать всех»), затем книги. */
+@Composable
+private fun AllResults(retry: () -> Unit, onBook: (String) -> Unit, onAuthor: (String) -> Unit) {
+    val scope = rememberCoroutineScope()
+    val works = SearchHolder.works
+    val authors = SearchHolder.authors
+    val books = works.items.filter { !isHiddenType(it.workType) }
+    val werr = works.error
+    when {
+        works.loading && authors.loading -> Loading()
+        works.loadedQuery == null && !works.loading -> CenterMessage(
+            "Найдите книгу или автора и добавьте книги на полку.\n\nПоиск идёт по базе FantLab — " +
+                "в ней есть циклы и рейтинги. Нет нужной книги — попробуйте «Google Книги».",
+        )
+        werr != null && authors.items.isEmpty() -> CenterMessage(errorText(werr), "Повторить", retry)
+        !works.loading && !authors.loading && books.isEmpty() && authors.items.isEmpty() -> CenterMessage("Ничего не найдено")
+        else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
+            if (authors.items.isNotEmpty()) {
+                item { SearchSectionTitle("Авторы") }
+                val shown = if (SearchHolder.allAuthors) authors.items else authors.items.take(3)
+                items(shown, key = { "a:" + it.id }) { h -> AuthorRow(h) { onAuthor(h.id) }; RowDivider() }
+                if (!SearchHolder.allAuthors && authors.items.size > shown.size) {
+                    item {
+                        Text(
+                            "Показать всех авторов (${authors.items.size}${if (authors.hasMore) "+" else ""})",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.fillMaxWidth().clickable { SearchHolder.allAuthors = true }
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                        )
                     }
+                } else if (SearchHolder.allAuthors && authors.hasMore) {
+                    item { LoadMoreFooter(authors.loadingMore) { authors.more(scope) } }
+                }
+            } else if (authors.loading) {
+                item { LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) }
+            }
+            item { SearchSectionTitle("Книги") }
+            when {
+                works.loading -> item { LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) }
+                books.isEmpty() -> item {
+                    Text(
+                        if (werr != null) errorText(werr) else "Книг не найдено",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                }
+                else -> {
+                    items(books, key = { "b:" + it.id }) { b -> BookRow(b) { onBook(b.id) }; RowDivider() }
+                    if (works.hasMore) item { LoadMoreFooter(works.loadingMore) { works.more(scope) } }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun SearchSectionTitle(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
+    )
 }
 
 @Composable
