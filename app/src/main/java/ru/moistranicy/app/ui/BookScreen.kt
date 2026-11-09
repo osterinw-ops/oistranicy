@@ -442,7 +442,20 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                     style = MaterialTheme.typography.titleSmall,
                 )
                 Spacer(Modifier.height(4.dp))
-                children.forEach { c ->
+                // отметки книг; подцикл, все книги которого другого автора, — тем же цветом
+                val leafMarks = children.map { c -> if (c.book.isCycle) null else markFor(c.book, mainAuthor) }
+                val marks = children.mapIndexed { i, c ->
+                    if (!c.book.isCycle) leafMarks[i] else {
+                        val inner = (i + 1 until children.size).takeWhile { children[it].deep > c.deep }
+                            .filter { !children[it].book.isCycle }.map { leafMarks[it] }
+                        when {
+                            markFor(c.book, mainAuthor) == BookMark.OTHER_AUTHOR -> BookMark.OTHER_AUTHOR
+                            inner.isNotEmpty() && inner.all { it == BookMark.OTHER_AUTHOR } -> BookMark.OTHER_AUTHOR
+                            else -> null
+                        }
+                    }
+                }
+                children.forEachIndexed { ci, c ->
                     val st = shelf[c.book.id]?.status
                     Row(
                         Modifier
@@ -452,7 +465,7 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(Modifier.weight(1f)) {
-                            val mark = if (c.book.isCycle) null else markFor(c.book, mainAuthor)
+                            val mark = marks[ci]
                             Text(
                                 c.book.title,
                                 style = if (c.deep == 1) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyMedium,
