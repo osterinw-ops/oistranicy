@@ -81,7 +81,8 @@ fun ProfileScreen(onBook: (String) -> Unit, onUser: (String) -> Unit = {}, onPeo
             SocialCard(onUser = onUser, onPeople = onPeople)
 
             // Прочитано по месяцам — последние 12 месяцев, текущий справа
-            MonthlyStats(all.filter { it.status == ReadStatus.READ }.mapNotNull { it.finishedAt })
+            val readEntries = all.filter { it.status == ReadStatus.READ }
+            MonthlyStats(readEntries.mapNotNull { it.finishedAt }, undated = readEntries.count { it.finishedAt == null })
 
             // Счётчики по статусам
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -218,7 +219,7 @@ private val MONTHS = listOf("янв", "фев", "мар", "апр", "май", "�
 
 /** Столбики «прочитано за месяц» за последние 12 месяцев; текущий месяц — справа и выделен. */
 @Composable
-private fun MonthlyStats(finished: List<Long>) {
+private fun MonthlyStats(finished: List<Long>, undated: Int = 0) {
     val now = Calendar.getInstance()
     val curKey = now.get(Calendar.YEAR) * 12 + now.get(Calendar.MONTH)
     val counts = IntArray(12)
@@ -239,9 +240,18 @@ private fun MonthlyStats(finished: List<Long>) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        if (undated > 0) {
+            // книги, отмеченные прочитанными без даты (например, «предыдущие книги цикла»), в месяцы не попадают
+            Text(
+                "Ещё ${undated} без даты прочтения — в столбики не входят",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Spacer(Modifier.height(10.dp))
+        // высота не фиксирована: подписи месяцев всегда видны, даже с крупным шрифтом
         Row(
-            Modifier.fillMaxWidth().height(130.dp),
+            Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.Bottom,
         ) {
@@ -253,7 +263,10 @@ private fun MonthlyStats(finished: List<Long>) {
                         Text(
                             counts[i].toString(),
                             fontSize = 10.sp,
+                            lineHeight = 12.sp,
                             fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            softWrap = false,
                             color = if (current) Coral else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -274,8 +287,10 @@ private fun MonthlyStats(finished: List<Long>) {
                     Text(
                         MONTHS[monthIndex],
                         fontSize = 9.sp,
+                        lineHeight = 11.sp,
                         color = if (current) Coral else MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
+                        softWrap = false,
                     )
                 }
             }
