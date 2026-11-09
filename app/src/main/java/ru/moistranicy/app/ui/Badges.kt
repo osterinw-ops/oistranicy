@@ -103,7 +103,7 @@ fun MiniStars(rating: Float?, size: Dp = 12.dp) {
 fun CycleProgress(read: Int, total: Int, rating: Float?, dropped: Boolean, modifier: Modifier = Modifier) {
     androidx.compose.foundation.layout.Column(modifier) {
         MiniStars(rating)
-        Spacer(Modifier.height(5.dp))
+        Spacer(Modifier.height(4.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             val track = MaterialTheme.colorScheme.surfaceVariant
             val bar = if (dropped) EyeGrey else Violet
@@ -117,6 +117,7 @@ fun CycleProgress(read: Int, total: Int, rating: Float?, dropped: Boolean, modif
             Text(
                 "$read/$total",
                 fontSize = 11.sp,
+                lineHeight = 12.sp,
                 color = if (dropped) EyeGrey else MaterialTheme.colorScheme.onSurfaceVariant,
                 fontWeight = FontWeight.Medium,
             )

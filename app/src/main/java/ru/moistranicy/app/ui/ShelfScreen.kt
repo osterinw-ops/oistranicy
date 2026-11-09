@@ -53,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import ru.moistranicy.app.data.ShelfRepository
 import ru.moistranicy.app.data.CycleRepository
@@ -478,10 +479,12 @@ private fun SeriesHeader(g: Group, open: Boolean, onToggle: () -> Unit, onBook: 
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
+            // плотный межстрочный интервал: две строки названия не выходят за верх постера
             Text(
                 g.title.orEmpty(),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
+                lineHeight = 16.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -489,6 +492,7 @@ private fun SeriesHeader(g: Group, open: Boolean, onToggle: () -> Unit, onBook: 
                 Text(
                     it,
                     style = MaterialTheme.typography.bodySmall,
+                    lineHeight = 14.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -496,7 +500,7 @@ private fun SeriesHeader(g: Group, open: Boolean, onToggle: () -> Unit, onBook: 
             }
             val total = g.total
             if (total != null) {
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(3.dp))
                 CycleProgress(
                     read = total - (g.unread ?: 0), total = total, rating = g.rating, dropped = g.dropped,
                     modifier = Modifier.fillMaxWidth(0.85f),
@@ -510,7 +514,7 @@ private fun SeriesHeader(g: Group, open: Boolean, onToggle: () -> Unit, onBook: 
                 if (g.rating != null) MiniStars(g.rating)
             }
             if (g.hasNew) {
-                Text("новая книга", style = MaterialTheme.typography.labelSmall, color = Coral)
+                Text("новая книга", style = MaterialTheme.typography.labelSmall, lineHeight = 13.sp, color = Coral)
             }
         }
         Icon(
