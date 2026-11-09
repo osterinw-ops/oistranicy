@@ -34,6 +34,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
 import ru.moistranicy.app.data.AppPrefs
 import ru.moistranicy.app.data.FONT_SCALES
 import ru.moistranicy.app.data.OPTIONAL_TYPES
@@ -145,12 +146,13 @@ private fun SettingsCard() {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             listOf(ThemeMode.SYSTEM, ThemeMode.DARK, ThemeMode.LIGHT).forEach { m ->
                 val selected = AppPrefs.theme == m
-                val tint = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                // выбранная тема — чёрный кружок, остальные — тёмно-серые
+                val tint = if (selected) Color.White else Color.White.copy(alpha = 0.85f)
                 Box(
                     Modifier
                         .size(44.dp)
                         .clip(CircleShape)
-                        .background(if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                        .background(if (selected) Color.Black else Color(0xFF5E5A6E))
                         .clickable { AppPrefs.saveTheme(m) }
                         .semantics { contentDescription = "Тема: " + m.title },
                     contentAlignment = Alignment.Center,
