@@ -153,6 +153,22 @@ private fun buildGroups(
         if (status == ReadStatus.WANT && published.isEmpty() &&
             c.books.none { shelf[it.id]?.status == ReadStatus.WANT }
         ) continue
+        // книги с полки из цикла с тем же названием и автором, но другим id на FantLab
+        // (например, «Дозоры» как подцикл и как цикл) — показываем в этом же цикле, без дубля
+        val cname = normTitle(c.name)
+        val cAuthors = c.authors.mapNotNull { it.id }.toSet()
+        val bookIds = c.books.map { it.id }.toSet()
+        val twins = shelf.values.filter { e ->
+            val sid = e.book.seriesId
+            e.book.id !in bookIds && sid != null && sid != c.id && !cycles.containsKey(sid) &&
+                e.book.seriesName?.let { normTitle(it) } == cname &&
+                (cAuthors.isEmpty() || e.book.authors.any { it.id in cAuthors }) &&
+                !isHiddenType(e.book.workType)
+        }
+        twins.forEach { used += it.book.id }
+        val twinLines = twins.filter { it.status == status }.map { e ->
+            Line(e.book.id, null, e.book.title, e.book.year, false, true)
+        }
         val lines = books.filter { (_, b) ->
             val st = shelf[b.id]?.status
             // брошенный цикл больше не предлагаем: в «Хочу» — только явно отмеченные
@@ -161,7 +177,7 @@ private fun buildGroups(
             used += b.id
             Line(b.id, i + 1, b.title, b.year?.let { if (b.published) it else "$it, ожидается" }
                 ?: if (!b.published) "ожидается" else null, b.id in c.newIds, b.published, b.mark())
-        }
+        } + twinLines
         if (lines.isNotEmpty()) {
             cycleGroups += Group(
                 key = c.id, title = c.name, cycleId = c.id, progress = "$read из ${published.size}",
@@ -176,7 +192,7 @@ private fun buildGroups(
                 bookCount = published.size,
                 spines = books.map { (_, b) -> Spine(b.id, shelf[b.id]?.status, b.published, b.id in c.newIds) },
                 authorId = c.authors.firstOrNull()?.id,
-                rating = averageRating(c.books.map { it.id }, shelf),
+                rating = averageRating(c.books.map { it.id } + twins.map { it.book.id }, shelf),
             )
         }
     }
@@ -260,6 +276,10 @@ private fun buildGroups(
         singles = true,
     )
 }
+
+/** Название для сравнения: без регистра, кавычек и лишних пробелов, ё = е. */
+private fun normTitle(t: String): String =
+    t.lowercase().replace('ё', 'е').replace(Regex("[«»\"„“]"), "").trim().replace(Regex("\\s+"), " ")
 
 /** «Михаил Атаманов» → «Атаманов Михаил» (фамилия — последнее слово). */
 private fun surnameFirst(name: String): String {
