@@ -36,12 +36,12 @@ object Recommender {
         val high = fl.filter { (it.rating ?: 0) >= 8 }
         val liked = high.ifEmpty { fl.filter { (it.rating ?: 0) >= 7 } }.ifEmpty { fl }
             .sortedWith(compareByDescending<ShelfEntry> { it.rating ?: 0 }.thenByDescending { it.finishedAt ?: 0 })
-            .take(8)
+            .take(10)
         for (e in liked) {
             val sims = runCatching { FantLab.similars(e.book.id) }.getOrNull() ?: continue
             val why = if (e.rating != null) "Похожа на «${e.book.title}», которую вы оценили на ${e.rating}"
             else "Похожа на «${e.book.title}», которую вы прочитали"
-            sims.take(6).forEach { b ->
+            sims.take(8).forEach { b ->
                 val rating = b.communityRating
                 offer(
                     Recommendation(
@@ -57,10 +57,25 @@ object Recommender {
         val favAuthors = read.flatMap { e -> e.book.authors.filter { it.id?.startsWith("fl-") == true } }
             .groupBy { it.id!! }
             .entries.sortedByDescending { it.value.size }
-            .take(3)
+            .take(5)
+        val year = noveltyYear()
         for ((authorId, list) in favAuthors) {
             val d = runCatching { FantLab.author(authorId) }.getOrNull() ?: continue
             val count = list.size
+            // новинки года у любимых авторов — первая рекомендация должна быть свежей
+            d.sections.flatMap { it.books }
+                .filter { it.id !in onShelf && it.published && !it.isCycle && !isMinor(it.workType) && it.year?.toIntOrNull() == year }
+                .distinctBy { it.id }
+                .take(2)
+                .forEach { b ->
+                    offer(
+                        Recommendation(
+                            b.copy(authors = b.authors.ifEmpty { listOf(Person(authorId, d.name)) }),
+                            "Новинка $year года · вы прочитали $count ${books(count)} ${d.nameGenitive}",
+                            45.0 + count * 2 + (b.communityRating ?: 0f),
+                        ),
+                    )
+                }
             d.sections.flatMap { it.books }
                 .filter { it.id !in onShelf && it.published && !it.isCycle && !isMinor(it.workType) }
                 .distinctBy { it.id }
