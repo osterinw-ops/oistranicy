@@ -26,7 +26,8 @@ object ShelfRepository {
         if (::file.isInitialized) return
         file = File(context.filesDir, "shelf.json")
         deletedFile = File(context.filesDir, "shelf_deleted.json")
-        repairFile = File(context.filesDir, "shelf_series_checked.txt")
+        // v2: раньше сюда попадали и книги, которые не удалось загрузить, — проверяем всё заново
+        repairFile = File(context.filesDir, "shelf_series_checked_v2.txt")
         _entries.value = runCatching { load() }.getOrDefault(emptyMap())
         runCatching {
             if (deletedFile.exists()) {
@@ -81,8 +82,10 @@ object ShelfRepository {
                 .take(150)
             if (need.isEmpty()) return@launch
             for (e in need) {
-                tried += e.book.id
+                if (e.book.id in tried) continue
+                // не удалось загрузить — попробуем при следующем запуске
                 val d = runCatching { FantLab.work(e.book.id) }.getOrNull() ?: continue
+                tried += e.book.id
                 val cur = _entries.value[e.book.id]?.book ?: continue
                 val nb = cur.copy(
                     seriesId = d.book.seriesId,
@@ -92,6 +95,18 @@ object ShelfRepository {
                     genres = cur.genres.ifEmpty { d.book.genres },
                 )
                 if (nb != cur) refreshBook(nb)
+                // роман из частей («Чудо(вище)» + «Яр(к)ость» → «(Бес)человечность»):
+                // части на полке объединяем под романом, как под циклом
+                val parts = cycleBooks(d.children).map { it.book.id }
+                if (parts.size >= 2) {
+                    parts.forEach { pid ->
+                        val pb = _entries.value[pid]?.book ?: return@forEach
+                        if (pb.seriesId == null || pb.seriesId == d.book.seriesId) {
+                            refreshBook(pb.copy(seriesId = d.book.id, seriesName = d.book.title))
+                            tried += pid
+                        }
+                    }
+                }
                 delay(150)
             }
             runCatching { repairFile.writeText(tried.joinToString("\n")) }

@@ -183,8 +183,11 @@ private fun buildGroups(
     cycleGroups.sortWith(compareByDescending<Group> { it.hasNew }.thenBy { it.title })
 
     // книги с этим статусом, чей цикл не отслеживается или которые вне циклов
-    val rest = shelf.values.filter { it.status == status && it.book.id !in used && !isHiddenType(it.book.workType) }
-        .sortedByDescending { it.updatedAt }
+    // книга, в которую входят другие книги полки (роман из частей), — это «цикл», а не отдельная книга
+    val containers = shelf.values.mapNotNull { it.book.seriesId }.toHashSet()
+    val rest = shelf.values.filter {
+        it.status == status && it.book.id !in used && it.book.id !in containers && !isHiddenType(it.book.workType)
+    }.sortedByDescending { it.updatedAt }
     val bySeries = rest.filter { it.book.seriesName != null }.groupBy { it.book.seriesId ?: it.book.seriesName!! }
     val seriesGroups = bySeries.values.map { list ->
         val b0 = list.first().book
