@@ -60,7 +60,8 @@ import ru.moistranicy.app.data.Recommender
 import ru.moistranicy.app.data.ShelfRepository
 import java.util.Locale
 
-private const val PER_PAGE = 5
+/** Одна длинная страница на 30 книг. */
+private const val PER_PAGE = 30
 
 /** Рекомендации считаются один раз за сессию (или по кнопке «Обновить»). */
 private object RecsState {
@@ -299,7 +300,7 @@ fun RecommendationsScreen(onBook: (String) -> Unit) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         )
-                        OutlinedButton(onClick = { RecsState.page = page + 1 }, enabled = page < pages - 1) { Text("Ещё 5 →") }
+                        OutlinedButton(onClick = { RecsState.page = page + 1 }, enabled = page < pages - 1) { Text("Ещё $PER_PAGE →") }
                     }
                 }
             }
