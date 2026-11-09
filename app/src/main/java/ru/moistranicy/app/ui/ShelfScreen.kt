@@ -137,6 +137,7 @@ private fun buildGroups(
 ): List<Group> {
     val used = HashSet<String>()
     val cycleGroups = mutableListOf<Group>()
+    val hiddenCycles = nestedCyclesToHide(shelf, cycles)
     for (c in cycles.values) {
         // скрытые типы (статьи, сборники…) не показываем вовсе
         val books = c.books.withIndex().filter { !isHiddenType(it.value.type) }
@@ -146,6 +147,8 @@ private fun buildGroups(
         val fullyRead = published.isNotEmpty() && read == published.size
         // книги отслеживаемого цикла не попадают в «Вне циклов» ни в одной вкладке
         c.books.forEach { used += it.id }
+        // из вложенных циклов показываем один уровень (см. nestedCyclesToHide)
+        if (c.id in hiddenCycles) continue
         // «Прочитал» — все прочитанные книги цикла, даже если цикл не дочитан;
         // прочитанный целиком цикл в «Хочу прочитать» не показываем, пока не выйдет новая книга
         if (status == ReadStatus.WANT && fullyRead) continue
@@ -275,6 +278,32 @@ private fun buildGroups(
         hasNew = false,
         singles = true,
     )
+}
+
+/**
+ * Вложенные отслеживаемые циклы (подцикл целиком входит в больший цикл):
+ * если все отмеченные книги большего цикла — из одного подцикла, показываем подцикл;
+ * если отмечены книги и из других частей большего цикла — показываем больший цикл.
+ */
+private fun nestedCyclesToHide(shelf: Map<String, ShelfEntry>, cycles: Map<String, TrackedCycle>): Set<String> {
+    if (cycles.size < 2) return emptySet()
+    val sets = cycles.mapValues { (_, c) -> c.books.map { it.id }.toSet() }
+    fun contains(hi: String, lo: String): Boolean {
+        val h = sets.getValue(hi)
+        val l = sets.getValue(lo)
+        return hi != lo && l.isNotEmpty() && h.size > l.size && h.containsAll(l)
+    }
+    val hidden = HashSet<String>()
+    for (hi in cycles.keys) {
+        val subs = cycles.keys.filter { contains(hi, it) }
+        if (subs.isEmpty()) continue
+        val marked = sets.getValue(hi).filter { shelf.containsKey(it) }
+        if (marked.isNotEmpty() && subs.any { sets.getValue(it).containsAll(marked) }) hidden += hi
+    }
+    for (lo in cycles.keys) {
+        if (lo !in hidden && cycles.keys.any { hi -> hi !in hidden && contains(hi, lo) }) hidden += lo
+    }
+    return hidden
 }
 
 /** Название для сравнения: без регистра, кавычек и лишних пробелов, ё = е. */

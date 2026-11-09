@@ -321,16 +321,22 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
 
             val parents = details?.parents.orEmpty()
             if (parents.isNotEmpty()) {
+                // «Входит в: Цикл / Подцикл» — каждое название открывает цикл
                 Spacer(Modifier.height(12.dp))
-                Text("Входит в", style = MaterialTheme.typography.titleSmall)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    parents.forEach { p ->
-                        AssistChip(onClick = { onBook(p.id) }, label = { Text(p.name, maxLines = 1, overflow = TextOverflow.Ellipsis) })
+                FlowRow(verticalArrangement = Arrangement.Center) {
+                    Text("Входит в: ", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    parents.forEachIndexed { i, p ->
+                        Text(
+                            p.name + if (i < parents.size - 1) " / " else "",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.clickable { onBook(p.id) },
+                        )
                     }
                 }
             } else if (book.seriesName != null) {
                 Spacer(Modifier.height(12.dp))
-                Text("Цикл: «${book.seriesName}»", color = MaterialTheme.colorScheme.primary)
+                Text("Входит в: ${book.seriesName}", color = MaterialTheme.colorScheme.primary)
             }
 
             if (cycleId != null && cycles.containsKey(cycleId)) {
