@@ -79,8 +79,29 @@ fun BookCover(book: Book, modifier: Modifier = Modifier, corner: Dp = 10.dp) {
                 modifier = Modifier.fillMaxSize(),
             )
         }
+        // книга этого года — значок NEW в углу обложки
+        if (book.year?.trim()?.toIntOrNull() == currentYear()) NewBadge(Modifier.align(Alignment.TopStart))
     }
 }
+
+/** Коралловый значок «NEW» на обложке новинки. */
+@Composable
+fun NewBadge(modifier: Modifier = Modifier) {
+    Text(
+        "NEW",
+        color = Color.White,
+        fontSize = 8.sp,
+        lineHeight = 9.sp,
+        fontWeight = FontWeight.ExtraBold,
+        modifier = modifier
+            .padding(3.dp)
+            .clip(RoundedCornerShape(3.dp))
+            .background(Coral)
+            .padding(horizontal = 3.dp, vertical = 1.dp),
+    )
+}
+
+fun currentYear(): Int = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
 
 @Composable
 fun StatusBadge(status: ReadStatus, modifier: Modifier = Modifier) {
