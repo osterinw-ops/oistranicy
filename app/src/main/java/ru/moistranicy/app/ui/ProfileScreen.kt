@@ -18,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -168,14 +169,29 @@ private fun SettingsCard() {
         }
         Spacer(Modifier.height(10.dp))
         Text("Показывать в приложении", style = MaterialTheme.typography.titleSmall)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            OPTIONAL_TYPES.forEach { (type, label) ->
-                val shown = type !in AppPrefs.hiddenTypes
-                FilterChip(
-                    selected = shown,
-                    onClick = { AppPrefs.setTypeHidden(type, shown) },
-                    label = { Text(label) },
-                )
+        // флажки в два столбика
+        val half = (OPTIONAL_TYPES.size + 1) / 2
+        Row(Modifier.fillMaxWidth()) {
+            listOf(OPTIONAL_TYPES.take(half), OPTIONAL_TYPES.drop(half)).forEach { col ->
+                Column(Modifier.weight(1f)) {
+                    col.forEach { (type, label) ->
+                        val shown = type !in AppPrefs.hiddenTypes
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { AppPrefs.setTypeHidden(type, shown) },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = shown,
+                                onCheckedChange = { AppPrefs.setTypeHidden(type, shown) },
+                                modifier = Modifier.size(36.dp),
+                            )
+                            Text(label, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
             }
         }
         Text(
