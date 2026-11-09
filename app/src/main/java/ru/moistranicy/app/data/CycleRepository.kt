@@ -310,8 +310,10 @@ object CycleRepository {
             val best = when {
                 l == null -> r
                 r == null -> l
-                r.changedAt > l.changedAt -> r.copy(newIds = r.newIds + l.newIds)
-                else -> l.copy(newIds = l.newIds + r.newIds)
+                // отметки «новая» берём у более свежей копии: иначе просмотренные
+                // новинки возвращались из облака и счётчик на «Полке» не сбрасывался
+                r.changedAt > l.changedAt -> r
+                else -> l
             } ?: continue
             val del = deleted[id]
             if (del != null && del >= best.changedAt) continue
