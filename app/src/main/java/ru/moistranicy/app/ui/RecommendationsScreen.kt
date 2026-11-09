@@ -183,10 +183,14 @@ fun RecommendationsScreen(onBook: (String) -> Unit) {
     blockedAuthors.size // подписка на изменения списка авторов
     val genreFilter = RecsState.genre
     val eraFilter = RecsState.era
-    val all = pool.filter { r ->
-        (genreFilter == null || r.book.genres.any { genreKey(it) == genreFilter }) &&
-            (eraFilter == null || eraOf(r.book.year) == eraFilter)
-    }
+    val readAuthors = remember(shelf) { Recommender.readAuthorKeys() }
+    val all = Recommender.arrange(
+        pool.filter { r ->
+            (genreFilter == null || r.book.genres.any { genreKey(it) == genreFilter }) &&
+                (eraFilter == null || eraOf(r.book.year) == eraFilter)
+        },
+        readAuthors,
+    )
     // варианты фильтров: жанры — от частых к редким, периоды — от новых к старым
     val genreOptions = (pool.flatMap { r -> r.book.genres.map(::genreKey).distinct() }
         .groupingBy { it }.eachCount().entries

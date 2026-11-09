@@ -119,6 +119,51 @@ object Recommender {
         }
     }
 
+    /** Год «новинок»: текущий, а в январе — прошедший. */
+    fun noveltyYear(): Int {
+        val c = java.util.Calendar.getInstance()
+        val y = c.get(java.util.Calendar.YEAR)
+        return if (c.get(java.util.Calendar.MONTH) == java.util.Calendar.JANUARY) y - 1 else y
+    }
+
+    /** Ключи авторов, у которых пользователь прочитал хотя бы одну книгу. */
+    fun readAuthorKeys(): Set<String> = ShelfRepository.entries.value.values
+        .filter { it.status == ReadStatus.READ }
+        .flatMap { e -> e.book.authors.map { RecBlock.authorKey(it) } }.toSet()
+
+    /**
+     * Порядок показа: первая книга — новинка года [noveltyYear] (если есть),
+     * среди первых пяти — минимум две книги авторов, которых пользователь ещё не читал.
+     */
+    fun arrange(list: List<Recommendation>, readAuthors: Set<String>, year: Int = noveltyYear()): List<Recommendation> {
+        if (list.size < 2) return list
+        fun isNew(r: Recommendation) = r.book.authors.isNotEmpty() && r.book.authors.none { RecBlock.authorKey(it) in readAuthors }
+        val rest = list.toMutableList()
+        val fresh = rest.firstOrNull { it.book.year?.trim()?.toIntOrNull() == year }
+        val pinned = if (fresh != null) { rest.remove(fresh); listOf(fresh) } else emptyList()
+        val head = (pinned + rest.take(5 - pinned.size)).toMutableList()
+        val tail = rest.drop(5 - pinned.size).toMutableList()
+        while (head.count { isNew(it) } < 2) {
+            val cand = tail.firstOrNull { isNew(it) } ?: break
+            val victim = head.indices.lastOrNull { i -> !isNew(head[i]) && !(i == 0 && pinned.isNotEmpty()) } ?: break
+            val old = head[victim]
+            head[victim] = cand
+            tail.remove(cand)
+            tail.add(0, old)
+        }
+        // незнакомых авторов — не подряд в конце, а через одну: 2-я и 4-я позиции
+        val newInHead = head.drop(pinned.size).filter { isNew(it) }
+        val oldInHead = head.drop(pinned.size).filter { !isNew(it) }
+        val mixed = mutableListOf<Recommendation>()
+        val n = newInHead.toMutableList()
+        val o = oldInHead.toMutableList()
+        while (n.isNotEmpty() || o.isNotEmpty()) {
+            val wantNew = (pinned.size + mixed.size) % 2 == 1
+            mixed += if (wantNew && n.isNotEmpty()) n.removeAt(0) else if (o.isNotEmpty()) o.removeAt(0) else n.removeAt(0)
+        }
+        return pinned + mixed + tail
+    }
+
     private fun books(n: Int): String {
         val m10 = n % 10
         val m100 = n % 100
