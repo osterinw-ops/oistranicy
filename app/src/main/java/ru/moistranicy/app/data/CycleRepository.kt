@@ -202,7 +202,8 @@ object CycleRepository {
             val genres = mutableListOf<String>()
             for (b in need) {
                 val book = runCatching { FantLab.work(b.id).book }.getOrNull() ?: BookCache.get(b.id)
-                updateCover(b.id, book?.coverUrl)
+                // нет обложки на FantLab — ищем на ЛитРес
+                updateCover(b.id, book?.coverUrl ?: Litres.cover(b.title, c.authors.firstOrNull()?.name))
                 genres += book?.genres.orEmpty()
             }
             updateGenres(cycleId, genres)

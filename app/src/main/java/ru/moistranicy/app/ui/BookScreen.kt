@@ -120,10 +120,23 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
 
     val baseBook = details?.book ?: BookCache.get(id) ?: entry?.book
     val extra = fallback
-    val book = if (baseBook != null && extra != null) baseBook.copy(
+    /** Обложка с ЛитРес, если на FantLab её нет. */
+    var litresCover by remember(id) { mutableStateOf<String?>(null) }
+    val book = (if (baseBook != null && extra != null) baseBook.copy(
         annotation = baseBook.annotation.ifBlank { extra.annotation },
         coverUrl = baseBook.coverUrl ?: extra.coverUrl,
-    ) else baseBook
+    ) else baseBook)?.let { b -> if (b.coverUrl == null && litresCover != null) b.copy(coverUrl = litresCover) else b }
+    val needCover = !loading && baseBook != null && !baseBook.isCycle && baseBook.coverUrl == null && extra?.coverUrl == null
+    LaunchedEffect(id, needCover) {
+        val b = baseBook ?: return@LaunchedEffect
+        if (!needCover) return@LaunchedEffect
+        val url = ru.moistranicy.app.data.Litres.cover(b.title, b.authors.firstOrNull()?.name) ?: return@LaunchedEffect
+        litresCover = url
+        // запоминаем найденную обложку для полки и коллажей циклов
+        BookCache.put(b.copy(coverUrl = url))
+        ShelfRepository.get(id)?.let { e -> if (e.book.coverUrl == null) ShelfRepository.refreshBook(e.book.copy(coverUrl = url)) }
+        CycleRepository.updateCover(id, url)
+    }
     val cycles by CycleRepository.cycles.collectAsState()
     val scope = rememberCoroutineScope()
     val uri = LocalUriHandler.current
