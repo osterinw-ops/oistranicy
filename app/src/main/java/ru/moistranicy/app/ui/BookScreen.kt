@@ -59,6 +59,9 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Button
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DatePicker
 import ru.moistranicy.app.data.cycleBooks
 import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.rememberCoroutineScope
@@ -151,6 +154,7 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
     // подтверждение отмены статуса
     var confirmUndo by remember(id) { mutableStateOf<ReadStatus?>(null) }
     var pendingSheet by remember(id) { mutableStateOf<String?>(null) }
+    var pickDate by remember(id) { mutableStateOf(false) }
     // «отметить весь цикл прочитанным»: 1 — подтверждение, 2 — вопрос про книги других авторов
     var markAllStep by remember(id) { mutableIntStateOf(0) }
 
@@ -384,6 +388,19 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                         ),
                     )
                 }
+            }
+
+            if (entry?.status == ReadStatus.READ) {
+                // дата прочтения; нажатие — выбрать другую
+                Spacer(Modifier.height(4.dp))
+                val finished = entry.finishedAt
+                Text(
+                    if (finished != null) "Прочитано: " + readDateText(finished) + " · изменить"
+                    else "Дата прочтения не указана · указать",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable { pickDate = true }.padding(vertical = 4.dp),
+                )
             }
 
             if (entry != null) {
@@ -626,6 +643,30 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
         }
     }
 
+    if (pickDate) {
+        val e = shelf[id]
+        val state = rememberDatePickerState(
+            initialSelectedDateMillis = (e?.finishedAt ?: System.currentTimeMillis()).let { localToUtcDay(it) },
+        )
+        DatePickerDialog(
+            onDismissRequest = { pickDate = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.selectedDateMillis?.let { ShelfRepository.setFinishedAt(id, utcDayToLocalNoon(it)) }
+                    pickDate = false
+                }) { Text("Готово") }
+            },
+            dismissButton = {
+                Row {
+                    if (e?.finishedAt != null) {
+                        TextButton(onClick = { ShelfRepository.setFinishedAt(id, null); pickDate = false }) { Text("Без даты") }
+                    }
+                    TextButton(onClick = { pickDate = false }) { Text("Отмена") }
+                }
+            },
+        ) { DatePicker(state = state, title = { Text("Когда прочитали", modifier = Modifier.padding(start = 24.dp, top = 16.dp)) }) }
+    }
+
     if (markAllStep > 0 && book != null) {
         val d = details
         val mainAuthor = book.authors.firstOrNull { !isPseudoAuthor(it) }?.id
@@ -768,4 +809,33 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
             }
         }
     }
+}
+
+private val RU_MONTHS_GEN = listOf(
+    "января", "февраля", "марта", "апреля", "мая", "июня",
+    "июля", "августа", "сентября", "октября", "ноября", "декабря",
+)
+
+/** «8 ноября 2026». */
+fun readDateText(ts: Long): String {
+    val c = java.util.Calendar.getInstance().apply { timeInMillis = ts }
+    return "${c.get(java.util.Calendar.DAY_OF_MONTH)} ${RU_MONTHS_GEN[c.get(java.util.Calendar.MONTH)]} ${c.get(java.util.Calendar.YEAR)}"
+}
+
+/** Местная дата → полночь того же дня в UTC (так её ждёт DatePicker). */
+private fun localToUtcDay(ts: Long): Long {
+    val l = java.util.Calendar.getInstance().apply { timeInMillis = ts }
+    val u = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
+    u.clear()
+    u.set(l.get(java.util.Calendar.YEAR), l.get(java.util.Calendar.MONTH), l.get(java.util.Calendar.DAY_OF_MONTH))
+    return u.timeInMillis
+}
+
+/** День из DatePicker (полночь UTC) → полдень этого дня по местному времени. */
+private fun utcDayToLocalNoon(utc: Long): Long {
+    val u = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply { timeInMillis = utc }
+    val l = java.util.Calendar.getInstance()
+    l.clear()
+    l.set(u.get(java.util.Calendar.YEAR), u.get(java.util.Calendar.MONTH), u.get(java.util.Calendar.DAY_OF_MONTH), 12, 0)
+    return l.timeInMillis
 }

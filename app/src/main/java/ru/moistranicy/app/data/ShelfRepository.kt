@@ -75,6 +75,12 @@ object ShelfRepository {
         update(_entries.value + (id to old.copy(rating = rating, updatedAt = System.currentTimeMillis())))
     }
 
+    /** Дата прочтения (null — не указана). */
+    fun setFinishedAt(id: String, ts: Long?) {
+        val old = _entries.value[id] ?: return
+        update(_entries.value + (id to old.copy(finishedAt = ts, updatedAt = System.currentTimeMillis())))
+    }
+
     fun remove(id: String) {
         if (!_entries.value.containsKey(id)) return
         synchronized(deleted) { deleted[id] = System.currentTimeMillis() }
