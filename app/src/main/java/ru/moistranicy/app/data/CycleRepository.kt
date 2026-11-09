@@ -31,6 +31,21 @@ object CycleRepository {
                 o.keys().forEach { deleted[it] = o.getLong(it) }
             }
         }
+        retireDropped()
+    }
+
+    /**
+     * «Бросить цикл» убрано: брошенные циклы больше не отслеживаем (их книги не всплывают
+     * в «Хочу прочитать»), прочитанные книги остаются на полке.
+     */
+    @Synchronized
+    private fun retireDropped() {
+        val dropped = _cycles.value.values.filter { it.dropped }.map { it.id }
+        if (dropped.isEmpty()) return
+        val now = System.currentTimeMillis()
+        dropped.forEach { deleted[it] = now }
+        write(_cycles.value - dropped.toSet())
+        saveDeleted()
     }
 
     private lateinit var deletedFile: File
@@ -80,27 +95,6 @@ object CycleRepository {
             !c.dropped && c.books.any { it.id == bookId } && c.books.none { shelf.containsKey(it.id) }
         }
         if (stale.isNotEmpty()) save(_cycles.value - stale.map { it.id }.toSet())
-    }
-
-    /** Бросить цикл: все непрочитанные вышедшие книги — в «Бросил», цикл больше не предлагаем. */
-    fun dropCycle(id: String) {
-        val c = _cycles.value[id] ?: return
-        val shelf = ShelfRepository.entries.value
-        c.books.filter { it.published }.forEach { b ->
-            val st = shelf[b.id]?.status
-            if (st != ReadStatus.READ && st != ReadStatus.DROPPED) {
-                ShelfRepository.setStatus(bookOf(c, b), ReadStatus.DROPPED)
-            }
-        }
-        save(_cycles.value + (id to c.copy(dropped = true, newIds = emptySet())))
-    }
-
-    /** Вернуться к брошенному циклу: книги со статусом «Бросил» снимаются с полки. */
-    fun undropCycle(id: String) {
-        val c = _cycles.value[id] ?: return
-        val shelf = ShelfRepository.entries.value
-        c.books.forEach { b -> if (shelf[b.id]?.status == ReadStatus.DROPPED) ShelfRepository.remove(b.id) }
-        save(_cycles.value + (id to c.copy(dropped = false)))
     }
 
     private fun firstBooksGenres(d: WorkDetails): List<String> =
@@ -329,6 +323,7 @@ object CycleRepository {
         }
         write(result)
         saveDeleted()
+        retireDropped()
     }
 
     private fun load(): Map<String, TrackedCycle> {

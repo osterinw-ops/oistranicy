@@ -35,6 +35,20 @@ object ShelfRepository {
                 o.keys().forEach { deleted[it] = o.getLong(it) }
             }
         }
+        dropDropped(notify = false)
+    }
+
+    /**
+     * Механики «Бросил» больше нет: брошенные книги становятся непрочитанными (уходят с полки).
+     * Отметка удаления уходит в облако, поэтому и на других устройствах они исчезнут.
+     */
+    private fun dropDropped(notify: Boolean) {
+        val dropped = _entries.value.values.filter { it.status == ReadStatus.DROPPED }.map { it.book.id }
+        if (dropped.isEmpty()) return
+        val now = System.currentTimeMillis()
+        synchronized(deleted) { dropped.forEach { deleted[it] = now } }
+        saveDeleted()
+        update(_entries.value - dropped.toSet(), notify = notify)
     }
 
     fun get(id: String): ShelfEntry? = _entries.value[id]
@@ -175,6 +189,7 @@ object ShelfRepository {
         }
         saveDeleted()
         update(result, notify = false)
+        dropDropped(notify = true)
     }
 
     private fun mergeBook(main: Book, other: Book): Book = main.copy(

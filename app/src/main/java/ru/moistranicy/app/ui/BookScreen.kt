@@ -370,7 +370,7 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
             Spacer(Modifier.height(16.dp))
             Text("Статус", style = MaterialTheme.typography.titleSmall)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ReadStatus.entries.forEach { s ->
+                ru.moistranicy.app.data.VISIBLE_STATUSES.forEach { s ->
                     FilterChip(
                         selected = entry?.status == s,
                         onClick = {
@@ -383,37 +383,6 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                             selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
                         ),
                     )
-                }
-            }
-
-            // «Бросить весь цикл»: для книги из цикла или для самого цикла
-            val dropTarget = if (book.isCycle && details?.children?.isNotEmpty() == true) id else cycleId
-            if (dropTarget != null) {
-                val tc = cycles[dropTarget]
-                if (tc?.dropped == true) {
-                    TextButton(onClick = { CycleRepository.undropCycle(dropTarget) }) {
-                        Text("Вернуться к циклу «${tc.name}»", style = MaterialTheme.typography.bodySmall)
-                    }
-                } else {
-                    TextButton(onClick = {
-                        scope.launch {
-                            try {
-                                if (dropTarget == id && details != null) CycleRepository.follow(details!!)
-                                else CycleRepository.ensureFollowed(dropTarget)
-                                CycleRepository.dropCycle(dropTarget)
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (e: Exception) {
-                                followError = "Не удалось загрузить цикл с FantLab"
-                            }
-                        }
-                    }) {
-                        Text(
-                            "Бросить весь цикл" + (tc?.name?.let { " «$it»" } ?: ""),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
                 }
             }
 

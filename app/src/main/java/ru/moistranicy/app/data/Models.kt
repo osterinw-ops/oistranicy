@@ -4,8 +4,12 @@ enum class ReadStatus(val title: String) {
     READING("Читаю"),
     WANT("Хочу прочитать"),
     READ("Прочитал"),
+    /** Больше не используется: брошенные книги при запуске снимаются с полки. */
     DROPPED("Бросил"),
 }
+
+/** Статусы, которые видит пользователь (механика «Бросил» убрана). */
+val VISIBLE_STATUSES = listOf(ReadStatus.READING, ReadStatus.WANT, ReadStatus.READ)
 
 /** Автор. id — в формате источника, например "fl-1". */
 data class Person(val id: String?, val name: String)

@@ -86,17 +86,15 @@ fun ProfileScreen(onBook: (String) -> Unit, onUser: (String) -> Unit = {}, onPeo
             MonthlyStats(readEntries.mapNotNull { it.finishedAt }, undated = readEntries.count { it.finishedAt == null })
 
             // Счётчики по статусам
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                ReadStatus.entries.chunked(2).forEach { pair ->
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        pair.forEach { s -> StatTile(s.title, all.count { it.status == s }.toString()) }
-                    }
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Column(Modifier.weight(1f)) { StatTile("Всего на полке", all.size.toString()) }
-                Column(Modifier.weight(1f)) {
-                    StatTile("Средняя оценка", avg?.let { String.format(Locale("ru"), "%.1f", it) } ?: "—")
+            val tiles = ru.moistranicy.app.data.VISIBLE_STATUSES.map { s -> s.title to all.count { it.status == s }.toString() } +
+                listOf(
+                    "Всего на полке" to all.size.toString(),
+                    "Средняя оценка" to (avg?.let { String.format(Locale("ru"), "%.1f", it) } ?: "—"),
+                )
+            tiles.chunked(2).forEach { pair ->
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    pair.forEach { (label, value) -> Column(Modifier.weight(1f)) { StatTile(label, value) } }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
 

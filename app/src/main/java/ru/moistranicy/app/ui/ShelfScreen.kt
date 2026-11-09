@@ -346,7 +346,7 @@ fun ShelfScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit = {}, onSea
     // «Читаю» — отдельными книгами, без группировки по циклам
     val reading = shelf.values.filter { it.status == ReadStatus.READING }.sortedByDescending { it.updatedAt }
     // вкладка «Читаю» видна, только если есть книги с этим статусом
-    val statuses = ReadStatus.entries.filter { it != ReadStatus.READING || reading.isNotEmpty() }
+    val statuses = ru.moistranicy.app.data.VISIBLE_STATUSES.filter { it != ReadStatus.READING || reading.isNotEmpty() }
     val groupsByStatus = statuses.associateWith { buildGroups(it, shelf, cycles, ShelfUi.readByCount) }
     val selected = ReadStatus.entries.getOrElse(ShelfUi.tab) { ReadStatus.WANT }
     val current = if (selected in statuses) selected else ReadStatus.WANT
