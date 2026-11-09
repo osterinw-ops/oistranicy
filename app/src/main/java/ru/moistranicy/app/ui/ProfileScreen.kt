@@ -19,6 +19,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Checkbox
+import ru.moistranicy.app.data.Importer
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -197,6 +198,8 @@ private fun SettingsCard() {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        Spacer(Modifier.height(10.dp))
+        ImportButton()
         Spacer(Modifier.height(8.dp))
         Text(
             "Данные о книгах: FantLab (fantlab.ru) и Google Книги. Полка хранится только на этом телефоне.",
@@ -310,4 +313,88 @@ private fun MonthlyStats(finished: List<Long>, undated: Int = 0) {
             }
         }
     }
+}
+
+
+/** «Импорт прочитанных книг»: инструкция, выбор файла, ход и итог импорта. */
+@Composable
+private fun ImportButton() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var open by remember { mutableStateOf(false) }
+    val picker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+    ) { uri -> if (uri != null) Importer.start(context, uri) }
+    Text("Импорт", style = MaterialTheme.typography.titleSmall)
+    androidx.compose.material3.OutlinedButton(onClick = { Importer.reset(); open = true }) {
+        Text("Импорт прочитанных книг из файла")
+    }
+    if (!open) return
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = { open = false },
+        title = { Text("Импорт прочитанных книг") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                val msg = Importer.message
+                when {
+                    Importer.running -> {
+                        Text("Ищу книги на FantLab: ${Importer.done} из ${Importer.total}…")
+                        Spacer(Modifier.height(8.dp))
+                        androidx.compose.material3.LinearProgressIndicator(
+                            progress = { if (Importer.total == 0) 0f else Importer.done.toFloat() / Importer.total },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Отмечено: ${Importer.added}. Можно закрыть окно — импорт продолжится.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    msg != null -> {
+                        Text(msg)
+                        val miss = Importer.notFound
+                        if (miss.isNotEmpty()) {
+                            Spacer(Modifier.height(8.dp))
+                            Text("Не нашлись:", style = MaterialTheme.typography.titleSmall)
+                            miss.take(30).forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+                            if (miss.size > 30) Text("…и ещё ${miss.size - 30}", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    else -> {
+                        Text("Подойдёт текстовый файл (.txt, .csv) или таблица Excel (.xlsx).")
+                        Spacer(Modifier.height(8.dp))
+                        Text("Текстовый файл — одна книга в строке:", fontWeight = FontWeight.SemiBold)
+                        Text("Сергей Лукьяненко Ночной дозор", style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.height(6.dp))
+                        Text("Таблица — два столбца: автор и название:", fontWeight = FontWeight.SemiBold)
+                        Text("Сергей Лукьяненко | Ночной дозор", style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "В .txt и .csv столбцы можно разделять табуляцией или точкой с запятой. " +
+                                "Книги ищутся на FantLab и отмечаются прочитанными без даты и оценки.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (!Importer.running) {
+                androidx.compose.material3.TextButton(onClick = {
+                    picker.launch(
+                        arrayOf(
+                            "text/*",
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            "application/vnd.ms-excel",
+                            "application/octet-stream",
+                        ),
+                    )
+                }) { Text(if (Importer.message == null) "Загрузить файл" else "Загрузить ещё файл") }
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = { open = false }) { Text("Закрыть") }
+        },
+    )
 }
