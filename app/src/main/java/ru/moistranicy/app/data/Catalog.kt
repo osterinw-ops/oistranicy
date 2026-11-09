@@ -359,10 +359,21 @@ object FantLab {
             workType = c.str("work_type").ifEmpty { null },
             isCycle = c.str("work_type_name") in CYCLE_TYPES,
             communityRating = c.floatOrNull("val_midmark_by_weight") ?: c.floatOrNull("rating"),
-            published = c.optInt("work_published", 1) == 1 && c.optInt("work_preparing", 0) == 0,
+            published = isPublished(c.optInt("work_published", 1) == 1, c.optInt("work_preparing", 0) == 1, c.posInt("work_year")),
         )
         BookCache.put(book)
         return (BookCache.get(book.id) ?: book).copy(published = book.published)
+    }
+
+    /**
+     * «Ожидается» только то, что действительно не вышло: FantLab помечает неизданными и книги,
+     * опубликованные лишь в сети (ЛитРес, АТ). Книга прошлых лет без пометки «в работе» — вышла.
+     */
+    private fun isPublished(publishedFlag: Boolean, preparing: Boolean, year: Int?): Boolean {
+        if (preparing) return false
+        if (publishedFlag) return true
+        val now = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+        return year != null && year < now
     }
 
     /** Жанры из классификатора: основные по числу голосов + уверенные поджанры. */

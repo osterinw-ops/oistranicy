@@ -142,8 +142,12 @@ private fun buildGroups(
     val cycleGroups = mutableListOf<Group>()
     val hiddenCycles = nestedCyclesToHide(shelf, cycles)
     for (c in cycles.values) {
-        // скрытые типы (статьи, сборники…) не показываем вовсе
-        val books = c.books.withIndex().filter { !isHiddenType(it.value.type) }
+        // скрытые типы (статьи, сборники…) не показываем вовсе;
+        // «ожидаемая» книга, которую пользователь уже прочитал, на деле вышла — считаем её вышедшей
+        val books = c.books.withIndex().filter { !isHiddenType(it.value.type) }.map { iv ->
+            val b = iv.value
+            if (!b.published && shelf[b.id]?.status == ReadStatus.READ) IndexedValue(iv.index, b.copy(published = true)) else iv
+        }
         // обязательные книги: вышли, написаны основным автором и изданы на русском
         val published = books.map { it.value }.filter { it.published && !it.optional }
         val read = published.count { shelf[it.id]?.status == ReadStatus.READ }

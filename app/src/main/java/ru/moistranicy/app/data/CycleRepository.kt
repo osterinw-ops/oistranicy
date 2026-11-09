@@ -134,9 +134,16 @@ object CycleRepository {
         if (fresh.isEmpty()) return emptyList()
         val oldById = old.books.associateBy { it.id }
         val freshWithCovers = fresh.map { b -> b.copy(coverUrl = b.coverUrl ?: oldById[b.id]?.coverUrl) }
+        val shelf = ShelfRepository.entries.value
+        val thisYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
         val news = fresh.filter { b ->
             val prev = oldById[b.id]
-            (prev == null) || (!prev.published && b.published)
+            // уже прочитанная книга — не новинка; давние книги, которые теперь считаются вышедшими
+            // (раньше FantLab отмечал их «ожидается»), тоже не новинки
+            shelf[b.id]?.status != ReadStatus.READ && (
+                (prev == null) ||
+                    (!prev.published && b.published && (b.year?.toIntOrNull() ?: thisYear) >= thisYear - 1)
+                )
         }
         val updated = old.copy(
             name = details.book.title.ifBlank { old.name },
