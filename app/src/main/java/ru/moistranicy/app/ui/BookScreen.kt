@@ -59,6 +59,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Button
+import ru.moistranicy.app.data.cycleBooks
+import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalUriHandler
 import kotlinx.coroutines.CancellationException
@@ -136,6 +138,8 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
     // подтверждение отмены статуса
     var confirmUndo by remember(id) { mutableStateOf<ReadStatus?>(null) }
     var pendingSheet by remember(id) { mutableStateOf<String?>(null) }
+    // «отметить весь цикл прочитанным»: 1 — подтверждение, 2 — вопрос про книги других авторов
+    var markAllStep by remember(id) { mutableIntStateOf(0) }
 
     fun removeFromShelf() {
         ShelfRepository.remove(id)
@@ -443,10 +447,22 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                 Spacer(Modifier.height(16.dp))
                 val readCount = children.count { shelf[it.book.id]?.status == ReadStatus.READ }
                 val mainAuthor = book.authors.firstOrNull { !isPseudoAuthor(it) }?.id
-                Text(
-                    "Состав цикла · прочитано $readCount из ${children.size}",
-                    style = MaterialTheme.typography.titleSmall,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Состав цикла · прочитано $readCount из ${children.size}",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    // отметить все книги цикла прочитанными (с подтверждением)
+                    IconButton(onClick = { markAllStep = 1 }) {
+                        Icon(
+                            painterResource(R.drawable.ic_star_border),
+                            "Отметить все книги цикла прочитанными",
+                            tint = Coral,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
                 Spacer(Modifier.height(4.dp))
                 // отметки книг; подцикл, все книги которого другого автора, — тем же цветом
                 val leafMarks = children.map { c -> if (c.book.isCycle) null else markFor(c.book, mainAuthor) }
@@ -621,6 +637,69 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                     ) { Text("Отменить статус", color = Color.White, fontWeight = FontWeight.Bold) }
                 }
             }
+        }
+    }
+
+    if (markAllStep > 0 && book != null) {
+        val d = details
+        val mainAuthor = book.authors.firstOrNull { !isPseudoAuthor(it) }?.id
+        // книги цикла (без подциклов и мелких форм), вышедшие и ещё не прочитанные
+        val unread = d?.let { cycleBooks(it.children) }.orEmpty()
+            .filter { it.published && shelf[it.book.id]?.status != ReadStatus.READ }
+        val side = unread.filter { markFor(it.book, mainAuthor) == BookMark.OTHER_AUTHOR }
+        val main = unread - side.toSet()
+        fun markRead(items: List<ru.moistranicy.app.data.CycleItem>) {
+            if (d != null && !CycleRepository.isTracked(id)) CycleRepository.follow(d)
+            val tc = CycleRepository.get(id)
+            items.forEach { item ->
+                val cb = tc?.books?.firstOrNull { b -> b.id == item.book.id }
+                val b = if (tc != null && cb != null) CycleRepository.bookOf(tc, cb)
+                else item.book.copy(seriesId = item.book.seriesId ?: id, seriesName = item.book.seriesName ?: book.title)
+                ShelfRepository.setStatus(b, ReadStatus.READ, knownDate = false)
+            }
+        }
+        if (unread.isEmpty()) {
+            AlertDialog(
+                onDismissRequest = { markAllStep = 0 },
+                confirmButton = { TextButton(onClick = { markAllStep = 0 }) { Text("Понятно") } },
+                title = { Text("Всё уже прочитано") },
+                text = { Text("Все вышедшие книги цикла «${book.title}» уже отмечены прочитанными.") },
+            )
+        } else if (markAllStep == 1) {
+            AlertDialog(
+                onDismissRequest = { markAllStep = 0 },
+                title = { Text("Отметить весь цикл?") },
+                text = {
+                    Text(
+                        "Вы уверены, что хотите отметить все книги цикла «${book.title}» прочитанными? " +
+                            "Книг: ${unread.size}. Оценки и даты прочтения ставить не будем.",
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (side.isEmpty()) { markRead(main); markAllStep = 0 } else markAllStep = 2
+                    }) { Text("Отметить") }
+                },
+                dismissButton = { TextButton(onClick = { markAllStep = 0 }) { Text("Отмена") } },
+            )
+        } else {
+            AlertDialog(
+                onDismissRequest = { markAllStep = 0 },
+                title = { Text("Книги других авторов") },
+                text = {
+                    Text(
+                        "В цикле есть книги других авторов (${side.size}): " +
+                            side.take(3).joinToString(", ") { "«${it.book.title}»" } + (if (side.size > 3) "…" else "") +
+                            ". Отметить их тоже прочитанными?",
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { markRead(unread); markAllStep = 0 }) { Text("Да, все") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { markRead(main); markAllStep = 0 }) { Text("Только основного автора") }
+                },
+            )
         }
     }
 
