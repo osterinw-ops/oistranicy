@@ -96,7 +96,7 @@ private fun YandexLoginButton() {
     val launcher = rememberLauncherForActivityResult(sdk.contract) { result ->
         when (result) {
             is YandexAuthResult.Success -> scope.launch { SyncManager.afterLogin(result.token.value) }
-            is YandexAuthResult.Failure -> error = result.exception.message ?: "Не удалось войти"
+            is YandexAuthResult.Failure -> error = "Не удалось войти. " + ru.moistranicy.app.data.friendlyError(result.exception)
             YandexAuthResult.Cancelled -> Unit
         }
     }
@@ -173,7 +173,7 @@ fun SocialCard(onUser: (String) -> Unit, onPeople: () -> Unit) {
     var me by remember { mutableStateOf<ru.moistranicy.app.data.SUser?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     androidx.compose.runtime.LaunchedEffect(Account.token) {
-        me = runCatching { ru.moistranicy.app.data.SocialApi.me() }.onFailure { error = it.message }.getOrNull()
+        me = runCatching { ru.moistranicy.app.data.SocialApi.me() }.onFailure { error = ru.moistranicy.app.data.friendlyError(it) }.getOrNull()
     }
     Column(
         Modifier

@@ -175,7 +175,7 @@ fun FeedScreen(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                FeedState.error = e.message
+                FeedState.error = ru.moistranicy.app.data.friendlyError(e)
             } finally {
                 FeedState.loading = false
             }
@@ -346,7 +346,7 @@ private fun CommentsSheet(e: SEvent, onDismiss: () -> Unit, onUser: (String) -> 
     var sending by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(e.id) {
-        list = runCatching { SocialApi.comments(e.id) }.onFailure { error = it.message }.getOrNull() ?: emptyList()
+        list = runCatching { SocialApi.comments(e.id) }.onFailure { error = ru.moistranicy.app.data.friendlyError(it) }.getOrNull() ?: emptyList()
     }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 16.dp)) {
@@ -396,7 +396,7 @@ private fun CommentsSheet(e: SEvent, onDismiss: () -> Unit, onUser: (String) -> 
                                 text = ""
                                 onCount(updated.size)
                             } catch (ex: Exception) {
-                                error = ex.message
+                                error = ru.moistranicy.app.data.friendlyError(ex)
                             } finally {
                                 sending = false
                             }
@@ -435,7 +435,7 @@ fun PeopleScreen(onBack: () -> Unit, onUser: (String) -> Unit) {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            error = e.message
+            error = ru.moistranicy.app.data.friendlyError(e)
         } finally {
             loading = false
         }
@@ -446,7 +446,7 @@ fun PeopleScreen(onBack: () -> Unit, onUser: (String) -> Unit) {
         if (q.length < 2) return
         loading = true
         scope.launch {
-            try { results = SocialApi.search(q) } catch (e: Exception) { error = e.message } finally { loading = false }
+            try { results = SocialApi.search(q) } catch (e: Exception) { error = ru.moistranicy.app.data.friendlyError(e) } finally { loading = false }
         }
     }
 
@@ -524,7 +524,7 @@ fun UserScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onUser:
     val myShelf by ShelfRepository.entries.collectAsState()
 
     LaunchedEffect(id) {
-        try { user = SocialApi.userPage(id) } catch (e: CancellationException) { throw e } catch (e: Exception) { error = e.message }
+        try { user = SocialApi.userPage(id) } catch (e: CancellationException) { throw e } catch (e: Exception) { error = ru.moistranicy.app.data.friendlyError(e) }
     }
 
     Scaffold(

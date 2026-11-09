@@ -231,7 +231,7 @@ fun Loading() {
 }
 
 fun errorText(e: Throwable): String =
-    "Не удалось загрузить данные.\n${e.message ?: e.javaClass.simpleName}\n\nПроверьте подключение к интернету."
+    "Не удалось загрузить данные.\n" + ru.moistranicy.app.data.friendlyError(e)
 
 @Composable
 fun statusColor(status: ReadStatus): Color = when (status) {

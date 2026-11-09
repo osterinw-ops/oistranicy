@@ -117,7 +117,7 @@ fun RecommendationsScreen(onBook: (String) -> Unit) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                RecsState.error = e.message ?: "ошибка сети"
+                RecsState.error = ru.moistranicy.app.data.friendlyError(e)
             } finally {
                 RecsState.loading = false
             }
@@ -245,7 +245,7 @@ fun RecommendationsScreen(onBook: (String) -> Unit) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                err != null && pool.isEmpty() -> CenterMessage("Не удалось подобрать: $err", "Повторить") { load() }
+                err != null && pool.isEmpty() -> CenterMessage("Не удалось подобрать книги.\n$err", "Повторить") { load() }
                 all.isEmpty() && (genreFilter != null || eraFilter != null) -> {
                     if (RecsState.enriching) Column(
                         Modifier.fillMaxSize(),

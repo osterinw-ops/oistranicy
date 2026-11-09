@@ -211,7 +211,7 @@ object SyncManager {
                 Account.logout()
                 false
             } catch (e: Exception) {
-                lastError = e.message ?: "ошибка сети"
+                lastError = "Не удалось синхронизировать. " + friendlyError(e)
                 false
             } finally {
                 syncing = false
