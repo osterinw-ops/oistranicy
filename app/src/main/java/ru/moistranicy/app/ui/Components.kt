@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -406,4 +407,33 @@ fun markFor(book: Book, authorId: String?): BookMark? = when {
         book.authors.filter { !isPseudoAuthor(it) }.let { a -> a.isNotEmpty() && a.none { it.id == authorId } } -> BookMark.OTHER_AUTHOR
     isForeignTitle(book.title) -> BookMark.FOREIGN
     else -> null
+}
+
+/**
+ * Круглый портрет автора. Пока фото нет (или оно не загрузилось) —
+ * фирменная заглушка: фиолетовый градиент, силуэт читателя с книгой и коралловой закладкой.
+ */
+@Composable
+fun AuthorAvatar(photoUrl: String?, name: String, size: Dp, modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .size(size)
+            .clip(androidx.compose.foundation.shape.CircleShape)
+            .background(Brush.linearGradient(listOf(Violet, VioletDeep))),
+        contentAlignment = Alignment.Center,
+    ) {
+        androidx.compose.foundation.Image(
+            androidx.compose.ui.res.painterResource(ru.moistranicy.app.R.drawable.ic_author_placeholder),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+        )
+        if (photoUrl != null) {
+            AsyncImage(
+                model = photoUrl,
+                contentDescription = name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
 }

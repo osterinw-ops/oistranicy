@@ -1,0 +1,10 @@
+<!-- Автор без фото: силуэт читателя с раскрытой книгой и коралловой закладкой, как на логотипе -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#E6FFFFFF" android:pathData="M54,22 A13,13 0 1,1 53.99,22 Z" />
+    <path android:fillColor="#73FFFFFF" android:pathData="M27,80 C27,63 39,53 54,53 C69,53 81,63 81,80 Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M53,68 C46,64 38,63 31,65 L31,86 C38,84 46,85 53,89 Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M55,68 C62,64 70,63 77,65 L77,86 C70,84 62,85 55,89 Z" />
+    <path android:fillColor="#FFFF7A59" android:pathData="M63,65.2 L69,64.3 L69,80 L66,77 L63,80 Z" />
+</vector>

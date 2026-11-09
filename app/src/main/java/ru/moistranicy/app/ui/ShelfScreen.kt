@@ -637,19 +637,12 @@ private fun AuthorGroupHeader(g: Group, open: Boolean, onAuthor: (String) -> Uni
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val aid = g.authorId
-        Box(
-            Modifier.size(52.dp).clip(CircleShape)
-                .background(Brush.linearGradient(listOf(Violet, VioletDeep)))
-                .then(if (aid != null) Modifier.clickable { onAuthor(aid) } else Modifier),
-            contentAlignment = Alignment.Center,
-        ) {
-            val initials = g.title.orEmpty().split(' ').filter { it.isNotEmpty() }.take(2)
-                .joinToString("") { it.take(1).uppercase() }
-            Text(initials, color = Color.White, fontWeight = FontWeight.Bold)
-            g.authorPhoto?.let {
-                AsyncImage(model = it, contentDescription = g.title, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-            }
-        }
+        AuthorAvatar(
+            g.authorPhoto,
+            g.title.orEmpty(),
+            52.dp,
+            Modifier.clip(CircleShape).then(if (aid != null) Modifier.clickable { onAuthor(aid) } else Modifier),
+        )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(

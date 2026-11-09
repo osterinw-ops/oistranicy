@@ -124,19 +124,7 @@ private fun AuthorContent(details: AuthorDetails, onBook: (String) -> Unit) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
         item {
             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(72.dp).clip(RoundedCornerShape(36.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                ) {
-                    if (d.imageUrl != null) {
-                        AsyncImage(
-                            model = d.imageUrl,
-                            contentDescription = d.name,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
-                }
+                AuthorAvatar(d.imageUrl, d.name, 72.dp)
                 Spacer(Modifier.width(14.dp))
                 Column {
                     Text(d.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
