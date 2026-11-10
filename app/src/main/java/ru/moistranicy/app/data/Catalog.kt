@@ -67,7 +67,11 @@ object FantLab {
     private const val API = "https://api.fantlab.ru"
     private const val SITE = "https://fantlab.ru"
     private const val PAGE_SIZE = 25
-    private val CYCLE_TYPES = setOf("cycle", "epic", "series")
+    private val CYCLE_TYPES = setOf("cycle", "epic", "series", "condcycle", "conditional_cycle", "cond_cycle")
+
+    /** Цикл, роман-эпопея, серия или «условный цикл» — всё это показываем как цикл. */
+    private fun isCycleKind(eng: String, ru: String): Boolean =
+        eng in CYCLE_TYPES || eng.contains("cycle") || ru.lowercase().contains("цикл") || ru.lowercase().contains("эпопея")
 
     fun image(path: String?): String? {
         if (path.isNullOrBlank()) return null
@@ -108,7 +112,7 @@ object FantLab {
                 seriesName = null,
                 seriesNumber = null,
                 workType = o.str("name_show_im").ifEmpty { null },
-                isCycle = o.str("name_eng") in CYCLE_TYPES,
+                isCycle = isCycleKind(o.str("name_eng"), o.str("name_show_im")),
                 communityRating = o.floatOrNull("midmark_by_weight") ?: o.floatOrNull("midmark"),
             ).also { BookCache.put(it); KnownAuthors.addAll(it.authors) }
         }.filter { !isHiddenType(it.workType) }
@@ -158,6 +162,48 @@ object FantLab {
         }
     }
 
+    /**
+     * Издавалась ли книга на русском: true / false, null — по данным FantLab не понять.
+     * Смотрим язык оригинала и издания (блоки изданий, кроме «на иностранных языках», и поля языка изданий).
+     */
+    suspend fun hasRussianEdition(id: String): Boolean? = withContext(Dispatchers.IO) {
+        val o = JSONObject(Http.get("$API/work/${id.removePrefix("fl-")}/extended"))
+        if (o.str("lang_code").equals("ru", true) || o.str("lang").startsWith("русск", true)) return@withContext true
+        val langs = HashSet<String>()
+        var ruBlock = false
+        var anyEditionData = false
+        fun walk(x: Any?, inEditions: Boolean, blockTitle: String) {
+            when (x) {
+                is JSONObject -> {
+                    val title = listOf("title", "name", "block").map { x.str(it) }.firstOrNull { it.isNotEmpty() } ?: blockTitle
+                    val list = x.optJSONArray("list")
+                    if (inEditions && list != null && list.length() > 0) {
+                        anyEditionData = true
+                        val t = title.lowercase()
+                        if (!t.contains("иностран") && !t.contains("foreign") && !t.contains("перевод")) ruBlock = true
+                    }
+                    x.keys().forEach { k ->
+                        val v = x.opt(k)
+                        val ed = inEditions || k.startsWith("edition") || k.startsWith("translation")
+                        if (ed && (k == "lang_code" || k == "lang") && v is String && v.isNotBlank()) {
+                            anyEditionData = true
+                            langs += v.lowercase()
+                        }
+                        walk(v, ed, title)
+                    }
+                }
+                is JSONArray -> for (i in 0 until x.length()) walk(x.opt(i), inEditions, blockTitle)
+            }
+        }
+        walk(o, false, "")
+        when {
+            langs.any { it == "ru" || it.startsWith("русск") } -> true
+            langs.isNotEmpty() -> ruBlock
+            anyEditionData -> ruBlock
+            else -> null
+        }
+    }
+
     suspend fun work(id: String): WorkDetails = withContext(Dispatchers.IO) {
         val num = id.removePrefix("fl-")
         val o = JSONObject(Http.get("$API/work/$num?children=1&parents=1&classificatory=1"))
@@ -204,7 +250,7 @@ object FantLab {
             seriesName = nearest?.str("work_name")?.ifEmpty { null },
             seriesNumber = null,
             workType = o.str("work_type").ifEmpty { null },
-            isCycle = o.str("work_type_name") in CYCLE_TYPES,
+            isCycle = isCycleKind(o.str("work_type_name"), o.str("work_type")),
             communityRating = o.floatOrNull("rating"),
         )
         BookCache.put(book)
@@ -218,6 +264,28 @@ object FantLab {
         }.orEmpty().filter { !isHiddenType(it.book.workType) }
 
         WorkDetails(book, parents, children)
+    }
+
+    /**
+     * Автор без своей страницы на FantLab (его находят только по книгам):
+     * собираем страницу из поиска его произведений.
+     */
+    suspend fun authorFromWorks(id: String, name: String): AuthorDetails = withContext(Dispatchers.IO) {
+        val books = LinkedHashMap<String, Book>()
+        for (page in 1..3) {
+            val p = runCatching { searchWorks(name, page) }.getOrNull() ?: break
+            p.items.filter { b -> b.authors.any { it.id == id } }.forEach { books[it.id] = it }
+            if (!p.hasMore) break
+        }
+        if (books.isEmpty()) throw java.io.IOException("Автор не найден на FantLab")
+        val (cycles, works) = books.values.partition { it.isCycle }
+        AuthorDetails(
+            id = id, name = name, nameOrig = "", imageUrl = null, years = "",
+            sections = listOfNotNull(
+                works.takeIf { it.isNotEmpty() }?.let { AuthorSection("Произведения", it.sortedBy { b -> b.year ?: "9999" }) },
+                cycles.takeIf { it.isNotEmpty() }?.let { AuthorSection("Циклы", it) },
+            ),
+        )
     }
 
     suspend fun author(id: String): AuthorDetails = withContext(Dispatchers.IO) {
@@ -310,6 +378,13 @@ object FantLab {
                     result += AuthorSection(cycleBook.title, listOf(cycleBook), null)
                 } else {
                     result += AuthorSection(cycleBook.title, books, cycleBook.id)
+                    // подциклы (например, Riftwake внутри «Устремлённой в небо») — отдельными разделами
+                    children.forEachIndexed { k, item ->
+                        if (!item.book.isCycle || !seen.add(item.book.id)) return@forEachIndexed
+                        val sub = children.drop(k + 1).takeWhile { it.deep > item.deep }
+                        val subBooks = cycleBooks(sub.map { it.copy(deep = it.deep - item.deep) }).map { it.book }
+                        if (subBooks.isNotEmpty()) result += AuthorSection(item.book.title, subBooks, item.book.id)
+                    }
                 }
             }
         }
@@ -357,7 +432,7 @@ object FantLab {
             seriesName = null,
             seriesNumber = null,
             workType = c.str("work_type").ifEmpty { null },
-            isCycle = c.str("work_type_name") in CYCLE_TYPES,
+            isCycle = isCycleKind(c.str("work_type_name"), c.str("work_type")),
             communityRating = c.floatOrNull("val_midmark_by_weight") ?: c.floatOrNull("rating"),
             published = isPublished(c.optInt("work_published", 1) == 1, c.optInt("work_preparing", 0) == 1, c.posInt("work_year")),
         )
@@ -427,7 +502,7 @@ object FantLab {
                 seriesName = saga?.str("name")?.ifEmpty { null },
                 seriesNumber = null,
                 workType = o.str("name_type").ifEmpty { null },
-                isCycle = o.str("name_type_icon") in CYCLE_TYPES,
+                isCycle = isCycleKind(o.str("name_type_icon"), o.str("name_type")),
                 communityRating = o.optJSONObject("stat")?.floatOrNull("rating"),
                 published = o.optInt("published", 1) == 1,
             ).also { BookCache.put(it) }

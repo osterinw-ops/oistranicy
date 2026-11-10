@@ -71,7 +71,17 @@ fun AuthorScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit) {
         if (details != null) return@LaunchedEffect
         error = null
         try {
-            val d = FantLab.author(id)
+            val d = try {
+                FantLab.author(id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // у автора нет своей страницы на FantLab — собираем её по его книгам
+                val name = ru.moistranicy.app.data.KnownAuthors.snapshot().entries.firstOrNull { it.value == id }?.key
+                    ?: ShelfRepository.entries.value.values.flatMap { it.book.authors }.firstOrNull { it.id == id }?.name
+                    ?: throw e
+                runCatching { FantLab.authorFromWorks(id, name) }.getOrElse { throw e }
+            }
             AuthorCache.map[id] = d
             details = d
             // составные романы группируем уже после показа: нужны дополнительные запросы
@@ -113,7 +123,8 @@ private fun AuthorContent(details: AuthorDetails, onBook: (String) -> Unit) {
     // скрытые в настройках типы (статьи, интервью…) убираем сразу, без перезагрузки страницы
     val hidden = AppPrefs.hiddenTypes
     val d = remember(details, hidden) {
-        details.copy(sections = details.sections.map { s -> s.copy(books = s.books.filter { !isHiddenType(it.workType) }) }
+        details.copy(sections = details.sections.filter { s -> s.cycleId != null || !ru.moistranicy.app.data.isHiddenSection(s.title) }
+            .map { s -> s.copy(books = s.books.filter { !isHiddenType(it.workType) }) }
             .filter { it.books.isNotEmpty() })
     }
     val shelf by ShelfRepository.entries.collectAsState()
@@ -124,7 +135,12 @@ private fun AuthorContent(details: AuthorDetails, onBook: (String) -> Unit) {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
         item {
             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                AuthorAvatar(d.imageUrl, d.name, 72.dp)
+                Box(Modifier.size(80.dp)) {
+                    AuthorAvatar(d.imageUrl, d.name, 72.dp)
+                    // средняя оценка прочитанных и оценённых книг автора
+                    val myRating = authorRating(d.id, shelf)
+                    if (myRating != null) Box(Modifier.align(Alignment.BottomEnd)) { RatingStar(myRating, size = 30.dp) }
+                }
                 Spacer(Modifier.width(14.dp))
                 Column {
                     Text(d.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)

@@ -54,6 +54,8 @@ object CycleRepository {
 
     fun get(id: String): TrackedCycle? = _cycles.value[id]
     fun isTracked(id: String) = _cycles.value.containsKey(id)
+    /** Пользователь сам перестал следить за циклом — автоматически не возвращаем. */
+    fun wasUnfollowed(id: String) = deleted.containsKey(id)
 
     /** Начать следить за циклом: details — карточка самого цикла (с составом). */
     fun follow(details: WorkDetails) {
@@ -239,13 +241,52 @@ object CycleRepository {
                 it.book.id, it.book.title, it.book.year, it.book.workType, it.published,
                 it.book.coverUrl ?: BookCache.get(it.book.id)?.coverUrl,
                 side = main.isNotEmpty() && authors.isNotEmpty() && authors.none { a -> a.id in main },
-                foreign = isForeignTitle(it.book.title),
+                foreign = isForeignBook(it.book.id, it.book.title),
             )
         }
     }
 
     /** Циклы, сохранённые до появления отметок «другой автор» / «не на русском». */
     private val outdated = HashSet<String>()
+
+    /**
+     * Язык книг циклов — по изданиям на FantLab: по одному запросу на книгу, один раз
+     * (результат хранится в LangCache), затем пересчитываем отметки «не на русском».
+     */
+    fun checkLanguagesInBackground() {
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            val titles = _cycles.value.values.flatMap { it.books }.associate { it.id to it.title }
+            val ids = _cycles.value.values.filter { !it.dropped }.flatMap { c -> c.books.map { it.id } }
+                .distinct().filter { it.startsWith("fl-") && !LangCache.has(it) }.take(300)
+            var changed = 0
+            var failed = 0
+            for (id in ids) {
+                // сервер не отдаёт сведения об изданиях — не мучаем его до следующего запуска
+                if (failed >= 5 && changed == 0) break
+                val res = runCatching { FantLab.hasRussianEdition(id) }
+                if (res.isFailure) { failed++; continue }
+                // по изданиям не понять — остаёмся при проверке по названию
+                LangCache.put(id, res.getOrNull()?.let { !it } ?: isForeignTitle(titles[id].orEmpty()))
+                changed++
+                kotlinx.coroutines.delay(120)
+                if (changed % 20 == 0) applyLanguages()
+            }
+            if (changed > 0) applyLanguages()
+        }
+    }
+
+    @Synchronized
+    private fun applyLanguages() {
+        var any = false
+        val map = _cycles.value.mapValues { (_, c) ->
+            val books = c.books.map { b ->
+                val f = isForeignBook(b.id, b.title)
+                if (f != b.foreign) { any = true; b.copy(foreign = f) } else b
+            }
+            if (books == c.books) c else c.copy(books = books)
+        }
+        if (any) save(map)
+    }
 
     /** Один раз обновить такие циклы с FantLab (в фоне). */
     fun refreshOutdatedInBackground() {

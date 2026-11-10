@@ -60,7 +60,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.clickable
 
 @Composable
-fun ProfileScreen(onBook: (String) -> Unit, onUser: (String) -> Unit = {}, onPeople: () -> Unit = {}) {
+fun ProfileScreen(
+    onBook: (String) -> Unit,
+    onUser: (String) -> Unit = {},
+    onPeople: () -> Unit = {},
+    onShelf: (ReadStatus) -> Unit = {},
+) {
     val shelf by ShelfRepository.entries.collectAsState()
     val all = shelf.values
     val year = Calendar.getInstance().get(Calendar.YEAR)
@@ -87,14 +92,20 @@ fun ProfileScreen(onBook: (String) -> Unit, onUser: (String) -> Unit = {}, onPeo
             MonthlyStats(readEntries.mapNotNull { it.finishedAt }, undated = readEntries.count { it.finishedAt == null })
 
             // Счётчики по статусам
-            val tiles = ru.moistranicy.app.data.VISIBLE_STATUSES.map { s -> s.title to all.count { it.status == s }.toString() } +
-                listOf(
-                    "Всего на полке" to all.size.toString(),
-                    "Средняя оценка" to (avg?.let { String.format(Locale("ru"), "%.1f", it) } ?: "—"),
-                )
+            // плашки статусов ведут в соответствующий раздел полки
+            val tiles = ru.moistranicy.app.data.VISIBLE_STATUSES.map { s ->
+                Triple<String, String, (() -> Unit)?>(s.title, all.count { it.status == s }.toString()) { onShelf(s) }
+            } + listOf(
+                Triple<String, String, (() -> Unit)?>("Всего на полке", all.size.toString(), null),
+                Triple<String, String, (() -> Unit)?>("Средняя оценка", avg?.let { String.format(Locale("ru"), "%.1f", it) } ?: "—", null),
+            )
             tiles.chunked(2).forEach { pair ->
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    pair.forEach { (label, value) -> Column(Modifier.weight(1f)) { StatTile(label, value) } }
+                    pair.forEach { (label, value, click) ->
+                        Column(Modifier.weight(1f).then(if (click != null) Modifier.clip(RoundedCornerShape(16.dp)).clickable { click() } else Modifier)) {
+                            StatTile(label, value)
+                        }
+                    }
                     if (pair.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
@@ -147,21 +158,21 @@ private fun SettingsCard() {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             listOf(ThemeMode.SYSTEM, ThemeMode.DARK, ThemeMode.LIGHT).forEach { m ->
                 val selected = AppPrefs.theme == m
-                // выбранная тема — чёрный кружок, остальные — тёмно-серые
-                val tint = if (selected) Color.White else Color.White.copy(alpha = 0.85f)
+                // как размер шрифта: выбранный значок чёрный, остальные тёмно-серые, без подложки
+                val tint = if (selected) MaterialTheme.colorScheme.onSurface
+                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
                 Box(
                     Modifier
                         .size(44.dp)
                         .clip(CircleShape)
-                        .background(if (selected) Color.Black else Color(0xFF5E5A6E))
                         .clickable { AppPrefs.saveTheme(m) }
                         .semantics { contentDescription = "Тема: " + m.title },
                     contentAlignment = Alignment.Center,
                 ) {
                     when (m) {
-                        ThemeMode.SYSTEM -> Text("А", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = tint)
-                        ThemeMode.DARK -> Icon(painterResource(R.drawable.ic_moon), null, tint = tint, modifier = Modifier.size(22.dp))
-                        ThemeMode.LIGHT -> Icon(painterResource(R.drawable.ic_sun), null, tint = tint, modifier = Modifier.size(22.dp))
+                        ThemeMode.SYSTEM -> Text("А", fontSize = 24.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal, color = tint)
+                        ThemeMode.DARK -> Icon(painterResource(R.drawable.ic_moon), null, tint = tint, modifier = Modifier.size(26.dp))
+                        ThemeMode.LIGHT -> Icon(painterResource(R.drawable.ic_sun), null, tint = tint, modifier = Modifier.size(26.dp))
                     }
                 }
             }

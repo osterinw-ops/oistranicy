@@ -49,7 +49,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import ru.moistranicy.app.data.Book
 import ru.moistranicy.app.data.CycleBook
-import ru.moistranicy.app.data.isForeignTitle
+import ru.moistranicy.app.data.isForeignBook
 import ru.moistranicy.app.data.isPseudoAuthor
 import ru.moistranicy.app.data.AuthorHit
 import ru.moistranicy.app.data.ReadStatus
@@ -426,7 +426,7 @@ fun CycleBook.mark(): BookMark? = when {
 fun markFor(book: Book, authorId: String?): BookMark? = when {
     authorId != null && book.authors.isNotEmpty() &&
         book.authors.filter { !isPseudoAuthor(it) }.let { a -> a.isNotEmpty() && a.none { it.id == authorId } } -> BookMark.OTHER_AUTHOR
-    isForeignTitle(book.title) -> BookMark.FOREIGN
+    isForeignBook(book.id, book.title) -> BookMark.FOREIGN
     else -> null
 }
 

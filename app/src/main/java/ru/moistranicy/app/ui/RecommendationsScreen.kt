@@ -78,6 +78,11 @@ private object RecsState {
     val enriched = HashSet<String>()
     /** Жанры, для которых уже подбирали дополнительные книги. */
     val genresLoaded = HashSet<String>()
+    /** Уже показанные книги: «Обновить» подбирает другие. */
+    val seen = HashSet<String>()
+    var round by mutableIntStateOf(0)
+    /** Открыт полный список жанров («Другие»). */
+    var allGenresOpen by mutableStateOf(false)
 }
 
 /** Сбросить фильтры (двойное нажатие на вкладку, кнопка «Обновить»). */
@@ -112,7 +117,7 @@ fun RecommendationsScreen(onBook: (String) -> Unit) {
         RecsState.error = null
         scope.launch {
             try {
-                RecsState.items = Recommender.build()
+                RecsState.items = Recommender.build(RecsState.seen, RecsState.round)
                 RecsState.page = 0
             } catch (e: CancellationException) {
                 throw e
@@ -217,6 +222,9 @@ fun RecommendationsScreen(onBook: (String) -> Unit) {
                             resetRecsFilters()
                             RecsState.genresLoaded.clear()
                             RecsState.enriched.clear()
+                            // новый набор: прошлые книги уходят в конец, источники меняются
+                            RecsState.seen += RecsState.items.orEmpty().map { it.book.id }
+                            RecsState.round++
                             load()
                         }) { Icon(Icons.Filled.Refresh, "Обновить") }
                     }
@@ -227,7 +235,39 @@ fun RecommendationsScreen(onBook: (String) -> Unit) {
         Column(Modifier.padding(pad).fillMaxSize()) {
         if (genreOptions.isNotEmpty() || eraOptions.isNotEmpty()) {
             FilterRow(eraOptions, eraFilter) { RecsState.era = it; RecsState.page = 0 }
-            FilterRow(genreOptions, genreFilter) { RecsState.genre = it; RecsState.page = 0 }
+            // частые жанры + «Другие…» — полный список тегов
+            FilterRow(genreOptions.take(8) + listOfNotNull(genreFilter).filter { it !in genreOptions.take(8) }, genreFilter,
+                more = { RecsState.allGenresOpen = true }) { RecsState.genre = it; RecsState.page = 0 }
+            if (RecsState.allGenresOpen) {
+                val allTags = remember(shelf, genreOptions) {
+                    (genreOptions + shelf.values.flatMap { e -> e.book.genres.map(::genreKey) })
+                        .filter { it.isNotBlank() }.groupingBy { it }.eachCount().entries
+                        .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
+                        .map { it.key }
+                }
+                androidx.compose.material3.ModalBottomSheet(onDismissRequest = { RecsState.allGenresOpen = false }) {
+                    Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
+                        Text("Все жанры", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(8.dp))
+                        androidx.compose.foundation.layout.FlowRow(
+                            Modifier.verticalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            allTags.forEach { t ->
+                                FilterChip(
+                                    selected = t == genreFilter,
+                                    onClick = {
+                                        RecsState.genre = if (t == genreFilter) null else t
+                                        RecsState.page = 0
+                                        RecsState.allGenresOpen = false
+                                    },
+                                    label = { Text(t, style = MaterialTheme.typography.labelMedium, maxLines = 1) },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             val err = RecsState.error
@@ -315,7 +355,7 @@ fun RecommendationsScreen(onBook: (String) -> Unit) {
 
 /** Строка фильтров: повторное нажатие снимает выбор. */
 @Composable
-private fun FilterRow(options: List<String>, selected: String?, onSelect: (String?) -> Unit) {
+private fun FilterRow(options: List<String>, selected: String?, more: (() -> Unit)? = null, onSelect: (String?) -> Unit) {
     if (options.isEmpty()) return
     Row(
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
@@ -326,6 +366,12 @@ private fun FilterRow(options: List<String>, selected: String?, onSelect: (Strin
                 selected = o == selected,
                 onClick = { onSelect(if (o == selected) null else o) },
                 label = { Text(o, style = MaterialTheme.typography.labelMedium, maxLines = 1) },
+            )
+        }
+        if (more != null) {
+            androidx.compose.material3.AssistChip(
+                onClick = more,
+                label = { Text("Другие…", style = MaterialTheme.typography.labelMedium, maxLines = 1) },
             )
         }
     }

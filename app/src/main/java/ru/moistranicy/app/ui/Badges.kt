@@ -95,32 +95,64 @@ fun MiniStars(rating: Float?, size: Dp = 12.dp) {
     }
 }
 
+/** Цвет звезды оценки (1–10): больше 7 — рыжая, от 4 до 7 — синяя, меньше 4 — серая. */
+fun ratingColor(rating: Float): Color = when {
+    rating > 7f -> Coral
+    rating >= 4f -> EyeBlue
+    else -> EyeGrey
+}
+
+/** Оценка одной звездой с числом внутри; нет оценки — серый контур. */
+@Composable
+fun RatingStar(rating: Float?, size: Dp = 26.dp) {
+    Box(Modifier.size(size), contentAlignment = Alignment.Center) {
+        if (rating == null) {
+            Icon(painterResource(R.drawable.ic_star_border), "Нет оценки", tint = EyeGrey.copy(alpha = 0.6f), modifier = Modifier.size(size))
+        } else {
+            val text = if (rating % 1f == 0f) rating.toInt().toString() else "%.1f".format(rating).replace('.', ',')
+            Icon(painterResource(R.drawable.ic_star), "Оценка $text", tint = ratingColor(rating), modifier = Modifier.size(size))
+            Text(
+                text,
+                color = Color.White,
+                fontSize = (size.value * (if (text.length > 2) 0.26f else 0.34f)).sp,
+                lineHeight = (size.value * 0.34f).sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(top = (size.value * 0.06f).dp),
+            )
+        }
+    }
+}
+
 /**
- * Инфографика цикла: звёзды средней оценки и полоска «прочитано из всего».
+ * Инфографика цикла в одну строку: звезда средней оценки и полоска «прочитано из всего».
  * Брошенный цикл — серой полоской.
  */
 @Composable
 fun CycleProgress(read: Int, total: Int, rating: Float?, dropped: Boolean, modifier: Modifier = Modifier) {
-    androidx.compose.foundation.layout.Column(modifier) {
-        MiniStars(rating)
-        Spacer(Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            val track = MaterialTheme.colorScheme.surfaceVariant
-            val bar = if (dropped) EyeGrey else Violet
-            val frac = if (total <= 0) 0f else (read.toFloat() / total).coerceIn(0f, 1f)
-            Box(
-                Modifier.weight(1f).height(4.dp).clip(RoundedCornerShape(2.dp)).background(track),
-            ) {
-                Box(Modifier.fillMaxHeight().fillMaxWidth(frac).clip(RoundedCornerShape(2.dp)).background(bar))
-            }
-            Spacer(Modifier.width(8.dp))
-            Text(
-                "$read/$total",
-                fontSize = 11.sp,
-                lineHeight = 12.sp,
-                color = if (dropped) EyeGrey else MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.Medium,
-            )
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        RatingStar(rating, size = 26.dp)
+        Spacer(Modifier.width(8.dp))
+        val track = MaterialTheme.colorScheme.surfaceVariant
+        val bar = if (dropped) EyeGrey else Violet
+        val frac = if (total <= 0) 0f else (read.toFloat() / total).coerceIn(0f, 1f)
+        Box(
+            Modifier.weight(1f).height(4.dp).clip(RoundedCornerShape(2.dp)).background(track),
+        ) {
+            Box(Modifier.fillMaxHeight().fillMaxWidth(frac).clip(RoundedCornerShape(2.dp)).background(bar))
         }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            "$read/$total",
+            fontSize = 11.sp,
+            color = if (dropped) EyeGrey else MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.Medium,
+        )
     }
+}
+
+/** Средняя оценка прочитанных книг автора (книги без оценки не учитываются). */
+fun authorRating(authorId: String, shelf: Map<String, ShelfEntry>): Float? {
+    val r = shelf.values.filter { e -> e.status == ReadStatus.READ && e.book.authors.any { it.id == authorId } }
+        .mapNotNull { it.rating }
+    return if (r.isEmpty()) null else r.average().toFloat()
 }

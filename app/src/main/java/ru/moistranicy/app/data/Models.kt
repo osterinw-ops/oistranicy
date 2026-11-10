@@ -106,12 +106,30 @@ val OPTIONAL_TYPES = listOf(
     "интервью" to "Интервью",
     "киносценарий" to "Киносценарии",
     "комикс" to "Комиксы",
+    "документальн" to "Документальные",
+    "графическ" to "Графические",
+    "эссе" to "Эссе",
+    "библиограф" to "Библиография",
+    "прочее" to "Прочие",
 )
+
+/** Начало заголовка раздела библиографии для каждого скрываемого типа. */
+private val SECTION_PREFIX = mapOf(
+    "статья" to "стать", "рецензия" to "рецензи", "интервью" to "интервью", "киносценарий" to "киносценари",
+    "комикс" to "комикс", "документальн" to "документальн", "графическ" to "графическ", "эссе" to "эссе",
+    "библиограф" to "библиограф", "прочее" to "прочие",
+)
+
+/** Раздел библиографии автора («Статьи», «Эссе», «Прочие произведения»…) скрыт настройкой. */
+fun isHiddenSection(title: String): Boolean {
+    val t = title.lowercase().trim()
+    return AppPrefs.hiddenTypes.any { k -> SECTION_PREFIX[k]?.let { t.startsWith(it) } == true }
+}
 
 /** Произведение этого типа не показываем (всегда или по настройке пользователя). */
 fun isHiddenType(type: String?): Boolean {
     val t = type?.lowercase()?.trim() ?: return false
-    return t in ALWAYS_HIDDEN_TYPES || t in AppPrefs.hiddenTypes
+    return t in ALWAYS_HIDDEN_TYPES || AppPrefs.hiddenTypes.any { t == it || t.contains(it) }
 }
 
 /** Название без кириллицы, но с латиницей (или другим алфавитом) — книга не издана на русском. */
@@ -135,7 +153,15 @@ fun isMinor(type: String?): Boolean {
  * (рассказы, статьи). Если цикл целиком из рассказов — оставляем их.
  */
 fun cycleBooks(children: List<CycleItem>): List<CycleItem> {
-    val leaves = children.filter { !it.book.isCycle && !isHiddenType(it.book.workType) }.distinctBy { it.book.id }
+    // части и главы, вложенные в книгу (не в цикл), — не отдельные книги
+    val top = mutableListOf<CycleItem>()
+    var skipDeeperThan = Int.MAX_VALUE
+    for (it in children) {
+        if (it.deep > skipDeeperThan) continue
+        skipDeeperThan = if (it.book.isCycle) Int.MAX_VALUE else it.deep
+        top += it
+    }
+    val leaves = top.filter { !it.book.isCycle && !isHiddenType(it.book.workType) }.distinctBy { it.book.id }
     val major = leaves.filter { !isMinor(it.book.workType) }
     return major.ifEmpty { leaves }
 }

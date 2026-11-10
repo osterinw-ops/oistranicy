@@ -47,6 +47,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -79,6 +80,7 @@ class MainActivity : ComponentActivity() {
         AppPrefs.init(applicationContext)
         ShelfRepository.init(applicationContext)
         CycleRepository.init(applicationContext)
+        ru.moistranicy.app.data.LangCache.init(applicationContext)
         AuthorStats.init(applicationContext)
         KnownAuthors.init(applicationContext)
         RecBlock.init(applicationContext)
@@ -86,6 +88,7 @@ class MainActivity : ComponentActivity() {
         SocialSync.init(applicationContext)
         SyncManager.syncInBackground()
         CycleRepository.refreshOutdatedInBackground()
+        CycleRepository.checkLanguagesInBackground()
         ShelfRepository.repairSeriesInBackground()
         SocialSync.pushInBackground()
         Notifier.ensureChannel(applicationContext)
@@ -216,7 +219,13 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
                                 Icon(t.icon, contentDescription = null)
                             }
                         },
-                        label = { Text(t.label, fontSize = 10.sp, maxLines = 1, softWrap = false) },
+                        label = {
+                            // длинное «Рекомендации» не обрезаем: подпись может чуть выходить за свою ячейку
+                            Text(
+                                t.label, fontSize = 10.sp, letterSpacing = (-0.2).sp, maxLines = 1, softWrap = false,
+                                modifier = Modifier.wrapContentWidth(unbounded = true),
+                            )
+                        },
                     )
                 }
             }
@@ -265,6 +274,11 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
                     onBook = { nav.openBook(it) },
                     onUser = { nav.openUser(it) },
                     onPeople = { nav.navigate("people") },
+                    onShelf = { st ->
+                        ShelfUi.tab = st.ordinal
+                        goTab("shelf")
+                        currentTab = "shelf"
+                    },
                 )
             }
             composable("book/{id}") { e ->

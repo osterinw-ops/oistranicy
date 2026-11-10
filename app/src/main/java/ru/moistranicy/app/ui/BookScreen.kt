@@ -283,10 +283,10 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                     val ids = tc?.books?.map { it.id } ?: details?.children.orEmpty().map { it.book.id }
                     val avg = averageRating(ids, shelf)
                     if (avg != null) {
-                        MiniStars(avg, size = 14.dp)
+                        RatingStar(avg, size = 30.dp)
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            "моя " + "%.1f".format(avg).replace('.', ','),
+                            "моя оценка цикла",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -371,9 +371,13 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
             }
 
 
+            // отрывок — не книга: статусов и оценки у него нет
+            val isExcerpt = book.workType?.lowercase()?.contains("отрывок") == true
+            if (!isExcerpt) {
             Spacer(Modifier.height(16.dp))
             Text("Статус", style = MaterialTheme.typography.titleSmall)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            }
+            if (!isExcerpt) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ru.moistranicy.app.data.VISIBLE_STATUSES.forEach { s ->
                     FilterChip(
                         selected = entry?.status == s,
@@ -403,7 +407,7 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                 )
             }
 
-            if (entry != null) {
+            if (entry != null && !isExcerpt) {
                 Spacer(Modifier.height(12.dp))
                 Text("Моя оценка", style = MaterialTheme.typography.titleSmall)
                 Spacer(Modifier.height(6.dp))
@@ -508,7 +512,10 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
             }
 
             Spacer(Modifier.height(16.dp))
-            ExternalSourcesRow(ExternalSources.queryFor(book), "Найти книгу:")
+            ExternalSourcesRow(
+                ExternalSources.queryFor(book),
+                if (book.workType?.lowercase()?.contains("отрывок") == true) "Найти отрывок:" else "Найти книгу:",
+            )
 
             followError?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)

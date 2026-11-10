@@ -72,9 +72,9 @@ object ShelfUi {
     /** Раскрытые циклы (по умолчанию все свёрнуты). */
     val expanded = mutableStateMapOf<String, Boolean>()
     /** «Прочитал»: сортировка авторов по числу прочитанных книг (иначе — по фамилии); запоминается. */
-    var readByCount: Boolean
-        get() = ru.moistranicy.app.data.AppPrefs.readByCount
-        set(value) = ru.moistranicy.app.data.AppPrefs.saveReadByCount(value)
+    var readSort: Int
+        get() = ru.moistranicy.app.data.AppPrefs.readSort
+        set(value) = ru.moistranicy.app.data.AppPrefs.saveReadSort(value)
 
     /** Повторное нажатие на «Полку»: вкладка «Читаю», всё свёрнуто. */
     fun reset() {
@@ -136,7 +136,7 @@ private fun buildGroups(
     status: ReadStatus,
     shelf: Map<String, ShelfEntry>,
     cycles: Map<String, TrackedCycle>,
-    readByCount: Boolean = false,
+    readSort: Int = 0,
 ): List<Group> {
     val used = HashSet<String>()
     val cycleGroups = mutableListOf<Group>()
@@ -267,10 +267,14 @@ private fun buildGroups(
                 authorPhoto = id?.let { "https://fantlab.ru/images/autors/${it.removePrefix("fl-")}" },
                 children = series,
                 readBooks = books.size + series.sumOf { it.lines.size },
+                rating = averageRating(books.map { it.book.id } + series.flatMap { g -> g.lines.map { it.id } }, shelf),
             )
         }.sortedWith(
-            if (readByCount) compareByDescending<Group> { it.readBooks }.thenBy { surnameKey(surnameFirst(it.title.orEmpty())) }
-            else compareBy { surnameKey(surnameFirst(it.title.orEmpty())) },
+            when (readSort) {
+                1 -> compareByDescending<Group> { it.readBooks }.thenBy { surnameKey(surnameFirst(it.title.orEmpty())) }
+                2 -> compareByDescending<Group> { it.rating ?: -1f }.thenByDescending { it.readBooks }
+                else -> compareBy { surnameKey(surnameFirst(it.title.orEmpty())) }
+            },
         )
         return authorGroups
     }
@@ -347,7 +351,7 @@ fun ShelfScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit = {}, onSea
     val reading = shelf.values.filter { it.status == ReadStatus.READING }.sortedByDescending { it.updatedAt }
     // вкладка «Читаю» видна, только если есть книги с этим статусом
     val statuses = ru.moistranicy.app.data.VISIBLE_STATUSES.filter { it != ReadStatus.READING || reading.isNotEmpty() }
-    val groupsByStatus = statuses.associateWith { buildGroups(it, shelf, cycles, ShelfUi.readByCount) }
+    val groupsByStatus = statuses.associateWith { buildGroups(it, shelf, cycles, ShelfUi.readSort) }
     val selected = ReadStatus.entries.getOrElse(ShelfUi.tab) { ReadStatus.WANT }
     val current = if (selected in statuses) selected else ReadStatus.WANT
     val tabIndex = statuses.indexOf(current).coerceAtLeast(0)
@@ -452,12 +456,12 @@ fun ShelfScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit = {}, onSea
                                     modifier = Modifier.weight(1f),
                                 )
                                 Text(
-                                    if (ShelfUi.readByCount) "по числу книг" else "по фамилии",
+                                    when (ShelfUi.readSort) { 1 -> "по числу книг"; 2 -> "по оценке"; else -> "по фамилии" },
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.clickable { ShelfUi.readByCount = !ShelfUi.readByCount },
+                                    modifier = Modifier.clickable { ShelfUi.readSort = (ShelfUi.readSort + 1) % 3 },
                                 )
-                                IconButton(onClick = { ShelfUi.readByCount = !ShelfUi.readByCount }) {
+                                IconButton(onClick = { ShelfUi.readSort = (ShelfUi.readSort + 1) % 3 }) {
                                     Icon(painterResource(R.drawable.ic_sort), "Сортировка", tint = MaterialTheme.colorScheme.primary)
                                 }
                             }
@@ -496,7 +500,7 @@ fun ShelfScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit = {}, onSea
                                 }
                                 items(g.lines, key = { g.key + "/" + it.id }) { l ->
                                     val e = shelf[l.id]
-                                    if (e != null) Box(Modifier.padding(start = 12.dp)) { ReadingRow(e, cycles) { onBook(l.id) } }
+                                    if (e != null) Box(Modifier.padding(start = 12.dp)) { ReadingRow(e, cycles, showRating = true) { onBook(l.id) } }
                                 }
                             }
                             return@forEach
@@ -546,6 +550,10 @@ private fun SeriesHeader(g: Group, open: Boolean, onToggle: () -> Unit, onBook: 
     if (g.tracked && cid != null) {
         // догружаем обложки книг серии для коллажа
         LaunchedEffect(cid) { CycleRepository.ensureCovers(cid) }
+    } else if (cid != null && !CycleRepository.wasUnfollowed(cid)) {
+        // серия, за которой ещё не следим (условный цикл, роман из частей), — подключаем как цикл:
+        // появятся полоска прогресса, оценка и новинки
+        LaunchedEffect(cid) { runCatching { CycleRepository.ensureFollowed(cid) } }
     }
     Row(
         Modifier
@@ -595,7 +603,7 @@ private fun SeriesHeader(g: Group, open: Boolean, onToggle: () -> Unit, onBook: 
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (g.rating != null) MiniStars(g.rating)
+                RatingStar(g.rating, size = 24.dp)
             }
             if (g.hasNew) {
                 Text("новая книга", style = MaterialTheme.typography.labelSmall, lineHeight = 13.sp, color = Coral)
@@ -611,7 +619,7 @@ private fun SeriesHeader(g: Group, open: Boolean, onToggle: () -> Unit, onBook: 
 
 /** Книга во вкладке «Читаю»: обложка, название, затем цикл и автор. */
 @Composable
-private fun ReadingRow(e: ShelfEntry, cycles: Map<String, TrackedCycle>, onClick: () -> Unit) {
+private fun ReadingRow(e: ShelfEntry, cycles: Map<String, TrackedCycle>, showRating: Boolean = false, onClick: () -> Unit) {
     val b = e.book
     // номер и название цикла: сначала из отслеживаемых циклов, иначе из данных книги
     val tracked = cycles.values.firstOrNull { c -> c.books.any { it.id == b.id } }
@@ -658,6 +666,10 @@ private fun ReadingRow(e: ShelfEntry, cycles: Map<String, TrackedCycle>, onClick
                 )
             }
         }
+        if (showRating) {
+            Spacer(Modifier.width(8.dp))
+            StatusMark(e.status, e.rating, size = 26.dp)
+        }
     }
 }
 
@@ -669,12 +681,16 @@ private fun AuthorGroupHeader(g: Group, open: Boolean, onAuthor: (String) -> Uni
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val aid = g.authorId
-        AuthorAvatar(
-            g.authorPhoto,
-            g.title.orEmpty(),
-            52.dp,
-            Modifier.clip(CircleShape).then(if (aid != null) Modifier.clickable { onAuthor(aid) } else Modifier),
-        )
+        Box(Modifier.size(58.dp)) {
+            AuthorAvatar(
+                g.authorPhoto,
+                g.title.orEmpty(),
+                52.dp,
+                Modifier.clip(CircleShape).then(if (aid != null) Modifier.clickable { onAuthor(aid) } else Modifier),
+            )
+            // средняя оценка прочитанных книг автора — звёздочкой в углу аватарки
+            if (g.rating != null) Box(Modifier.align(Alignment.BottomEnd)) { RatingStar(g.rating, size = 24.dp) }
+        }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(

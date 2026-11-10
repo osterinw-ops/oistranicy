@@ -37,6 +37,15 @@ object AppPrefs {
         sp.edit().putBoolean("readByCount", value).apply()
     }
 
+    /** «Прочитал»: 0 — по фамилии, 1 — по числу книг, 2 — по средней оценке. Запоминается. */
+    var readSort by mutableIntStateOf(0)
+        private set
+
+    fun saveReadSort(value: Int) {
+        readSort = value
+        sp.edit().putInt("readSort", value).apply()
+    }
+
     val theme: ThemeMode get() = ThemeMode.entries.getOrElse(themeMode) { ThemeMode.SYSTEM }
 
     fun init(context: Context) {
@@ -47,6 +56,7 @@ object AppPrefs {
         themeMode = sp.getInt("themeMode", ThemeMode.SYSTEM.ordinal)
         hiddenTypes = sp.getStringSet("hiddenTypes", emptySet())?.toSet() ?: emptySet()
         readByCount = sp.getBoolean("readByCount", false)
+        readSort = sp.getInt("readSort", if (readByCount) 1 else 0)
     }
 
     fun setTypeHidden(type: String, hidden: Boolean) {

@@ -16,7 +16,11 @@ object Recommender {
 
     private fun fmt(r: Float) = String.format(Locale("ru"), "%.1f", r)
 
-    suspend fun build(): List<Recommendation> {
+    /**
+     * seen — книги, которые уже показывали: при «Обновить» они уходят в конец;
+     * round — номер обновления: с каждым разом берём другие источники и другие похожие книги.
+     */
+    suspend fun build(seen: Set<String> = emptySet(), round: Int = 0): List<Recommendation> {
         val shelf = ShelfRepository.entries.value
         val onShelf = shelf.keys
         val read = shelf.values.filter { it.status == ReadStatus.READ }
@@ -36,12 +40,12 @@ object Recommender {
         val high = fl.filter { (it.rating ?: 0) >= 8 }
         val liked = high.ifEmpty { fl.filter { (it.rating ?: 0) >= 7 } }.ifEmpty { fl }
             .sortedWith(compareByDescending<ShelfEntry> { it.rating ?: 0 }.thenByDescending { it.finishedAt ?: 0 })
-            .take(10)
+            .let { all -> if (all.size <= 10) all else (all + all).drop((round * 5) % all.size).take(10) }
         for (e in liked) {
             val sims = runCatching { FantLab.similars(e.book.id) }.getOrNull() ?: continue
             val why = if (e.rating != null) "Похожа на «${e.book.title}», которую вы оценили на ${e.rating}"
             else "Похожа на «${e.book.title}», которую вы прочитали"
-            sims.take(8).forEach { b ->
+            sims.drop((round * 4) % 12).take(8).ifEmpty { sims.take(8) }.forEach { b ->
                 val rating = b.communityRating
                 offer(
                     Recommendation(
@@ -57,7 +61,7 @@ object Recommender {
         val favAuthors = read.flatMap { e -> e.book.authors.filter { it.id?.startsWith("fl-") == true } }
             .groupBy { it.id!! }
             .entries.sortedByDescending { it.value.size }
-            .take(5)
+            .let { all -> if (all.size <= 5) all else (all + all).drop((round * 3) % all.size).take(5) }
         val year = noveltyYear()
         for ((authorId, list) in favAuthors) {
             val d = runCatching { FantLab.author(authorId) }.getOrNull() ?: continue
@@ -80,7 +84,7 @@ object Recommender {
                 .filter { it.id !in onShelf && it.published && !it.isCycle && !isMinor(it.workType) }
                 .distinctBy { it.id }
                 .sortedByDescending { it.communityRating ?: 0f }
-                .take(3)
+                .drop(round * 3).take(3)
                 .forEach { b ->
                     val rating = b.communityRating
                     offer(
@@ -94,7 +98,8 @@ object Recommender {
                 }
         }
 
-        return out.values.sortedByDescending { it.score }
+        // уже показанные — в конец списка
+        return out.values.sortedWith(compareBy<Recommendation> { it.book.id in seen }.thenByDescending { it.score })
     }
 
     /** Дополнительный набор для жанра: похожие на книги этого жанра с полки. Жанры уточнит [enrich]. */
