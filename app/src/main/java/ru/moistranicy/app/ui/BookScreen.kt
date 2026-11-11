@@ -283,13 +283,9 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                     val ids = tc?.books?.map { it.id } ?: details?.children.orEmpty().map { it.book.id }
                     val avg = averageRating(ids, shelf)
                     if (avg != null) {
-                        RatingStar(avg, size = 30.dp)
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            "моя оценка цикла",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        // как оценка FantLab, но цвет — по шкале оценки (рыжая / синяя / серая)
+                        val txt = if (avg % 1f == 0f) avg.toInt().toString() else "%.1f".format(avg)
+                        Text("★ $txt  моя оценка", style = MaterialTheme.typography.titleSmall, color = ratingColor(avg))
                     }
                 }
             } else
