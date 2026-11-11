@@ -2,6 +2,8 @@
 
 package ru.moistranicy.app.ui
 
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import android.Manifest
 import android.content.Intent
 import android.os.Build
@@ -14,6 +16,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.dp
 import ru.moistranicy.app.data.AuthorStats
 import ru.moistranicy.app.data.KnownAuthors
 import ru.moistranicy.app.data.RecBlock
@@ -231,7 +234,28 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
             }
         },
     ) { pad ->
-        NavHost(nav, startDestination = "shelf", modifier = Modifier.padding(pad)) {
+        // свайп влево / вправо на главных разделах переключает соседний раздел (Полка ↔ Авторы ↔ …);
+        // горизонтальные прокрутки и звёзды оценки внутри экранов забирают жест себе раньше
+        val swipeTab = tabs.indexOfFirst { it.route == route }
+        val swipeModifier = if (swipeTab < 0) Modifier else Modifier.pointerInput(swipeTab) {
+            val threshold = 72.dp.toPx()
+            var total = 0f
+            detectHorizontalDragGestures(
+                onDragStart = { total = 0f },
+                onDragEnd = {
+                    val target = when {
+                        total <= -threshold -> swipeTab + 1
+                        total >= threshold -> swipeTab - 1
+                        else -> -1
+                    }
+                    tabs.getOrNull(target)?.let { t -> goTab(t.route); currentTab = t.route }
+                },
+            ) { change, dx ->
+                change.consume()
+                total += dx
+            }
+        }
+        NavHost(nav, startDestination = "shelf", modifier = Modifier.padding(pad).then(swipeModifier)) {
             composable("shelf") {
                 ShelfScreen(
                     onBook = { nav.openBook(it) },
