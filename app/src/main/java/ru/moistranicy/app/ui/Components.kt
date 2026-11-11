@@ -31,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -380,7 +381,7 @@ fun SeriesCollage(covers: List<String>, title: String, modifier: Modifier = Modi
     }
 }
 
-/** Ряд мелких ссылок «Искать в ЛитРес / Яндекс Книгах / …». */
+/** Ряд квадратных значков книжных сервисов (ЛитРес, Яндекс Книги, …): нажатие открывает поиск книги на сайте. */
 @Composable
 fun ExternalSourcesRow(query: String, label: String, modifier: Modifier = Modifier) {
     val uri = androidx.compose.ui.platform.LocalUriHandler.current
@@ -390,20 +391,33 @@ fun ExternalSourcesRow(query: String, label: String, modifier: Modifier = Modifi
             Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
-                .padding(top = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                .padding(top = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             ru.moistranicy.app.data.ExternalSources.all.forEach { src ->
-                Text(
-                    src.name,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
-                        .clickable { runCatching { uri.openUri(src.url(query)) } }
-                        .padding(horizontal = 10.dp, vertical = 5.dp),
-                )
+                var loaded by androidx.compose.runtime.remember(src.name) { androidx.compose.runtime.mutableStateOf(false) }
+                Box(
+                    Modifier
+                        .size(46.dp)
+                        .shadow(1.dp, RoundedCornerShape(11.dp))
+                        .clip(RoundedCornerShape(11.dp))
+                        .background(
+                            if (loaded) Brush.linearGradient(listOf(Color.White, Color.White))
+                            else Brush.linearGradient(listOf(Violet, VioletDeep)),
+                        )
+                        .clickable { runCatching { uri.openUri(src.url(query)) } },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    // пока значок сайта не загрузился — первая буква на фирменном градиенте
+                    if (!loaded) Text(src.name.take(1), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    AsyncImage(
+                        model = src.iconUrl,
+                        contentDescription = src.name,
+                        contentScale = ContentScale.Fit,
+                        onSuccess = { loaded = true },
+                        modifier = Modifier.fillMaxSize().padding(7.dp),
+                    )
+                }
             }
         }
     }
