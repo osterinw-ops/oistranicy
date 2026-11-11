@@ -120,12 +120,19 @@ object FantLab {
     }
 
     suspend fun searchAuthors(query: String, page: Int): Page<AuthorHit> = withContext(Dispatchers.IO) {
-        val direct = runCatching { searchAuthorsDirect(query, page) }
+        if (page > 1) return@withContext searchAuthorsDirect(query, page)
+        // поиск авторов FantLab находит не всех (у некоторых нет своей страницы): параллельно ищем
+        // автора среди авторов найденных книг и добавляем тех, кого прямой поиск не нашёл, —
+        // в том числе когда по фамилии нашлись другие авторы
+        val (direct, fromWorks) = coroutineScope {
+            val d = async { runCatching { searchAuthorsDirect(query, page) } }
+            val w = async { runCatching { authorsFromWorks(query) }.getOrDefault(emptyList()) }
+            d.await() to w.await()
+        }
         val found = direct.getOrNull()
-        if (page > 1 || (found != null && found.items.isNotEmpty())) return@withContext direct.getOrThrow()
-        // поиск авторов FantLab находит не всех: ищем автора среди авторов найденных книг
-        val fromWorks = runCatching { authorsFromWorks(query) }.getOrDefault(emptyList())
-        if (fromWorks.isEmpty()) direct.getOrThrow() else Page(fromWorks, false)
+        if (found == null) return@withContext if (fromWorks.isEmpty()) direct.getOrThrow() else Page(fromWorks, false)
+        val known = found.items.map { it.id }.toSet()
+        Page(found.items + fromWorks.filter { it.id !in known }, found.hasMore)
     }
 
     private fun searchAuthorsDirect(query: String, page: Int): Page<AuthorHit> {
