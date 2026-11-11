@@ -420,9 +420,13 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
 
             if (book.genres.isNotEmpty()) {
                 Spacer(Modifier.height(14.dp))
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    book.genres.forEach { g -> SuggestionChip(onClick = {}, label = { Text(g) }) }
-                }
+                // теги стиля — оранжевым текстом через «|»
+                Text(
+                    book.genres.joinToString("  |  "),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Coral,
+                    fontWeight = FontWeight.Medium,
+                )
             }
 
             if (book.annotation.isNotBlank()) {
