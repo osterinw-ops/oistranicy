@@ -234,6 +234,9 @@ private fun AuthorContent(details: AuthorDetails, onBook: (String) -> Unit) {
                     status = shelf[b.id]?.status,
                     published = b.published,
                     mark = markFor(b, d.id),
+                    // как везде: прочитано — звёздочка (с оценкой), иначе глазик
+                    statusIcon = !b.isCycle,
+                    rating = shelf[b.id]?.rating,
                 ) { onBook(b.id) }
             }
         }
