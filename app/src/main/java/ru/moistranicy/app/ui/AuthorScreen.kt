@@ -171,9 +171,14 @@ private fun AuthorContent(details: AuthorDetails, onBook: (String) -> Unit) {
                     Modifier
                         .fillMaxWidth()
                         .clickable { expanded[cid] = !open }
-                        .padding(start = 12.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+                        .padding(start = (12 + 18 * s.depth).dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    // подцикл — ступенькой правее родителя, с уголком, чтобы было видно, куда он входит
+                    if (s.depth > 0) {
+                        Text("└", style = MaterialTheme.typography.bodyMedium, color = Violet)
+                        Spacer(Modifier.width(2.dp))
+                    }
                     Icon(
                         if (open) Icons.Filled.KeyboardArrowDown else Icons.AutoMirrored.Filled.KeyboardArrowRight,
                         contentDescription = if (open) "Свернуть" else "Развернуть",
@@ -215,7 +220,7 @@ private fun AuthorContent(details: AuthorDetails, onBook: (String) -> Unit) {
                         sub = listOfNotNull(b.year, if (!b.published) "ожидается" else null).joinToString(", "),
                         status = shelf[b.id]?.status,
                         published = b.published,
-                        indent = 36,
+                        indent = 36 + 18 * s.depth,
                         mark = markFor(b, d.id),
                         statusIcon = true,
                         rating = shelf[b.id]?.rating,

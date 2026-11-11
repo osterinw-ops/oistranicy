@@ -383,7 +383,7 @@ object FantLab {
                         if (!item.book.isCycle || !seen.add(item.book.id)) return@forEachIndexed
                         val sub = children.drop(k + 1).takeWhile { it.deep > item.deep }
                         val subBooks = cycleBooks(sub.map { it.copy(deep = it.deep - item.deep) }).map { it.book }
-                        if (subBooks.isNotEmpty()) result += AuthorSection(item.book.title, subBooks, item.book.id)
+                        if (subBooks.isNotEmpty()) result += AuthorSection(item.book.title, subBooks, item.book.id, depth = item.deep)
                     }
                 }
             }

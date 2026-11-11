@@ -173,7 +173,13 @@ data class WorkDetails(
 )
 
 /** Раздел библиографии. Для цикла cycleId задан, книги пронумерованы по порядку. */
-data class AuthorSection(val title: String, val books: List<Book>, val cycleId: String? = null)
+data class AuthorSection(
+    val title: String,
+    val books: List<Book>,
+    val cycleId: String? = null,
+    /** Вложенность цикла: 0 — цикл верхнего уровня, 1 — подцикл, 2 — подцикл подцикла… */
+    val depth: Int = 0,
+)
 
 data class AuthorDetails(
     val id: String,
