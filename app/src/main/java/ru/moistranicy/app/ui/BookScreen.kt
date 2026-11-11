@@ -371,8 +371,8 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
             }
 
 
-            // отрывок — не книга: статусов и оценки у него нет
-            val isExcerpt = book.workType?.lowercase()?.contains("отрывок") == true
+            // отрывок — не книга: статусов и оценки у него нет; у цикла блока статусов тоже нет
+            val isExcerpt = book.workType?.lowercase()?.contains("отрывок") == true || book.isCycle
             if (!isExcerpt) {
             Spacer(Modifier.height(16.dp))
             Text("Статус", style = MaterialTheme.typography.titleSmall)
@@ -394,7 +394,7 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
                 }
             }
 
-            if (entry?.status == ReadStatus.READ) {
+            if (entry?.status == ReadStatus.READ && !isExcerpt) {
                 // дата прочтения; нажатие — выбрать другую
                 Spacer(Modifier.height(4.dp))
                 val finished = entry.finishedAt
