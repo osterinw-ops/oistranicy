@@ -374,23 +374,10 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
             // отрывок — не книга: статусов и оценки у него нет; у цикла блока статусов тоже нет
             val isExcerpt = book.workType?.lowercase()?.contains("отрывок") == true || book.isCycle
             if (!isExcerpt) {
-            Spacer(Modifier.height(16.dp))
-            Text("Статус", style = MaterialTheme.typography.titleSmall)
-            }
-            if (!isExcerpt) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ru.moistranicy.app.data.VISIBLE_STATUSES.forEach { s ->
-                    FilterChip(
-                        selected = entry?.status == s,
-                        onClick = {
-                            // повторное нажатие на выбранный статус — отменить (с подтверждением)
-                            if (entry?.status == s) confirmUndo = s else onStatus(book, s)
-                        },
-                        label = { Text(s.title) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primary,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-                        ),
-                    )
+                Spacer(Modifier.height(16.dp))
+                StatusButtons(entry?.status) { s ->
+                    // повторное нажатие на выбранный статус — отменить (с подтверждением)
+                    if (entry?.status == s) confirmUndo = s else onStatus(book, s)
                 }
             }
 
@@ -845,4 +832,57 @@ private fun utcDayToLocalNoon(utc: Long): Long {
     l.clear()
     l.set(u.get(java.util.Calendar.YEAR), u.get(java.util.Calendar.MONTH), u.get(java.util.Calendar.DAY_OF_MONTH), 12, 0)
     return l.timeInMillis
+}
+
+/**
+ * Кнопки статуса книги: три плитки во всю ширину со значком и подписью.
+ * Выбранная — фирменный фиолетовый градиент, остальные — спокойная подложка.
+ */
+@Composable
+private fun StatusButtons(current: ReadStatus?, onClick: (ReadStatus) -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ru.moistranicy.app.data.VISIBLE_STATUSES.forEach { s ->
+            val selected = current == s
+            val icon = when (s) {
+                ReadStatus.READING -> R.drawable.ic_eye
+                ReadStatus.READ -> R.drawable.ic_star
+                else -> R.drawable.ic_bookmark
+            }
+            val accent = when (s) {
+                ReadStatus.READING -> EyeBlue
+                ReadStatus.READ -> Coral
+                else -> Violet
+            }
+            Column(
+                Modifier
+                    .weight(1f)
+                    .height(62.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(
+                        if (selected) Brush.horizontalGradient(listOf(Violet, VioletDeep))
+                        else Brush.horizontalGradient(listOf(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.surfaceVariant)),
+                    )
+                    .clickable { onClick(s) }
+                    .padding(horizontal = 4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Icon(
+                    painterResource(icon),
+                    contentDescription = null,
+                    tint = if (selected) Color.White else accent,
+                    modifier = Modifier.size(22.dp),
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    s.title,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
 }
