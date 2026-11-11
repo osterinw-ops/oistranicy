@@ -278,12 +278,39 @@ object FantLab {
             if (!p.hasMore) break
         }
         if (books.isEmpty()) throw java.io.IOException("Автор не найден на FantLab")
-        val (cycles, works) = books.values.partition { it.isCycle }
+        val (found, works) = books.values.partition { it.isCycle }
+        // циклы автора: найденные поиском и те, в которые входят его книги (по карточкам книг)
+        val cycleRefs = LinkedHashMap<String, String>()
+        val probe = works.filter { !isMinor(it.workType) }.take(24)
+        probe.chunked(6).forEach { part ->
+            coroutineScope {
+                part.map { b -> async { runCatching { work(b.id) }.getOrNull() } }.awaitAll()
+            }.filterNotNull().forEach { w ->
+                // первый в цепочке — цикл верхнего уровня, подциклы покажем внутри него
+                w.parents.firstOrNull()?.let { p -> cycleRefs.putIfAbsent(p.id, p.name) }
+            }
+        }
+        found.forEach { cycleRefs.putIfAbsent(it.id, it.title) }
+        val cycleDetails = cycleRefs.keys.take(12).chunked(4).flatMap { part ->
+            coroutineScope { part.map { cid -> async { runCatching { work(cid) }.getOrNull() } }.awaitAll() }
+        }.filterNotNull()
+        val seen = HashSet<String>()
+        val cycleSections = mutableListOf<AuthorSection>()
+        for (cd in cycleDetails) {
+            if (!seen.add(cd.book.id)) continue
+            cycleSections += sectionsForCycle(cd.book, cd.children, seen)
+        }
+        // циклы верхнего уровня идут первыми, поэтому их подциклы (seen) отдельно не дублируются
+        val (linked, links) = cycleSections.partition { it.cycleId != null }
+        val inCycles = linked.flatMap { sct -> sct.books.map { it.id } + sct.cycleId!! }.toHashSet()
+        val otherCycles = (links.flatMap { it.books } + found.filter { it.id !in inCycles && links.none { l -> l.books.any { b -> b.id == it.id } } })
+            .distinctBy { it.id }
+        val restWorks = works.filter { it.id !in inCycles }
         AuthorDetails(
             id = id, name = name, nameOrig = "", imageUrl = null, years = "",
-            sections = listOfNotNull(
-                works.takeIf { it.isNotEmpty() }?.let { AuthorSection("Произведения", it.sortedBy { b -> b.year ?: "9999" }) },
-                cycles.takeIf { it.isNotEmpty() }?.let { AuthorSection("Циклы", it) },
+            sections = linked + listOfNotNull(
+                otherCycles.takeIf { it.isNotEmpty() }?.let { AuthorSection("Другие циклы", it) },
+                restWorks.takeIf { it.isNotEmpty() }?.let { AuthorSection("Произведения", it.sortedBy { b -> b.year ?: "9999" }) },
             ),
         )
     }
@@ -356,6 +383,23 @@ object FantLab {
         return list.sortedBy { it.first }.map { it.second }
     }
 
+    /**
+     * Разделы одного цикла: сам цикл и его подциклы (например, Riftwake внутри «Устремлённой в небо»)
+     * отдельными разделами лесенкой. Цикл без раскрытого состава — ссылкой (cycleId = null).
+     */
+    private fun sectionsForCycle(cycleBook: Book, children: List<CycleItem>, seen: MutableSet<String>): List<AuthorSection> {
+        val books = cycleBooks(children).map { it.book }
+        if (books.isEmpty()) return listOf(AuthorSection(cycleBook.title, listOf(cycleBook), null))
+        val result = mutableListOf(AuthorSection(cycleBook.title, books, cycleBook.id))
+        children.forEachIndexed { k, item ->
+            if (!item.book.isCycle || !seen.add(item.book.id)) return@forEachIndexed
+            val sub = children.drop(k + 1).takeWhile { it.deep > item.deep }
+            val subBooks = cycleBooks(sub.map { it.copy(deep = it.deep - item.deep) }).map { it.book }
+            if (subBooks.isNotEmpty()) result += AuthorSection(item.book.title, subBooks, item.book.id, depth = item.deep)
+        }
+        return result
+    }
+
     /** Каждый цикл автора — отдельный раздел с книгами по порядку. */
     private fun cycleSections(raw: Any?): List<AuthorSection> {
         val result = mutableListOf<AuthorSection>()
@@ -372,20 +416,7 @@ object FantLab {
                     val b = blockItemToBook(c) ?: return@mapNotNull null
                     CycleItem(b, c.optInt("deep", 1).coerceAtLeast(1), b.published)
                 }
-                val books = cycleBooks(children).map { it.book }
-                if (books.isEmpty()) {
-                    // цикл без раскрытого состава — показываем его как ссылку
-                    result += AuthorSection(cycleBook.title, listOf(cycleBook), null)
-                } else {
-                    result += AuthorSection(cycleBook.title, books, cycleBook.id)
-                    // подциклы (например, Riftwake внутри «Устремлённой в небо») — отдельными разделами
-                    children.forEachIndexed { k, item ->
-                        if (!item.book.isCycle || !seen.add(item.book.id)) return@forEachIndexed
-                        val sub = children.drop(k + 1).takeWhile { it.deep > item.deep }
-                        val subBooks = cycleBooks(sub.map { it.copy(deep = it.deep - item.deep) }).map { it.book }
-                        if (subBooks.isNotEmpty()) result += AuthorSection(item.book.title, subBooks, item.book.id, depth = item.deep)
-                    }
-                }
+                result += sectionsForCycle(cycleBook, children, seen)
             }
         }
         // одиночные «циклы-ссылки» собираем в один раздел в конце
