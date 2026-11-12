@@ -156,13 +156,22 @@ object FantLab {
         if (words.isEmpty()) return emptyList()
         fun matches(p: Person) = norm(p.name).let { name -> words.all { it in name } }
         fun usable(p: Person) = p.id?.startsWith("fl-") == true && matches(p)
-        val books = searchWorks(query, 1).items
+        // по одной фамилии первыми идут книги, где она в названии («Генерал Бессонов»),
+        // а книги самого автора — дальше: смотрим несколько страниц
+        val books = coroutineScope {
+            (1..3).map { p -> async { runCatching { searchWorks(query, p).items }.getOrDefault(emptyList()) } }.awaitAll()
+        }.flatten()
+        val withId = books.flatMap { it.authors }.filter { usable(it) }
         // в списке книг у автора может не быть id — тогда берём его из карточки книги
-        val authors = books.flatMap { it.authors }.filter { usable(it) }.ifEmpty {
-            books.firstOrNull { b -> b.authors.any { matches(it) } }
-                ?.let { b -> work(b.id).book.authors.filter { usable(it) } }
-                .orEmpty()
-        }
+        // (по одной книге на каждое ещё не найденное имя)
+        val knownNames = withId.map { norm(it.name) }.toSet()
+        val probes = books.filter { b -> b.authors.any { matches(it) && norm(it.name) !in knownNames && !usable(it) } }
+            .distinctBy { b -> b.authors.first { matches(it) }.name.let(::norm) }
+            .take(3)
+        val fromCards = coroutineScope {
+            probes.map { b -> async { runCatching { work(b.id).book.authors.filter { usable(it) } }.getOrDefault(emptyList()) } }.awaitAll()
+        }.flatten()
+        val authors = withId + fromCards
         return authors.distinctBy { it.id }.map { a ->
             KnownAuthors.add(a.name, a.id!!)
             AuthorHit(a.id, a.name, "найден по книгам")
