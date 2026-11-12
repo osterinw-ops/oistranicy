@@ -179,6 +179,8 @@ data class AuthorSection(
     val cycleId: String? = null,
     /** Вложенность цикла: 0 — цикл верхнего уровня, 1 — подцикл, 2 — подцикл подцикла… */
     val depth: Int = 0,
+    /** Книги, показанные в подциклах этого цикла: в развёрнутом цикле их не повторяем. */
+    val nested: Set<String> = emptySet(),
 )
 
 data class AuthorDetails(

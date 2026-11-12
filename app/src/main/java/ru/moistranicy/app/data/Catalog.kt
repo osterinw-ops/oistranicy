@@ -406,12 +406,25 @@ object FantLab {
     private fun sectionsForCycle(cycleBook: Book, children: List<CycleItem>, seen: MutableSet<String>): List<AuthorSection> {
         val books = cycleBooks(children).map { it.book }
         if (books.isEmpty()) return listOf(AuthorSection(cycleBook.title, listOf(cycleBook), null))
-        val result = mutableListOf(AuthorSection(cycleBook.title, books, cycleBook.id))
+        // подциклы: позиция в children, глубина, книги
+        class Sub(val k: Int, val end: Int, val deep: Int, val book: Book, val books: List<Book>)
+        val subs = mutableListOf<Sub>()
         children.forEachIndexed { k, item ->
             if (!item.book.isCycle || !seen.add(item.book.id)) return@forEachIndexed
             val sub = children.drop(k + 1).takeWhile { it.deep > item.deep }
             val subBooks = cycleBooks(sub.map { it.copy(deep = it.deep - item.deep) }).map { it.book }
-            if (subBooks.isNotEmpty()) result += AuthorSection(item.book.title, subBooks, item.book.id, depth = item.deep)
+            if (subBooks.isEmpty()) return@forEachIndexed
+            // подцикл с теми же книгами, что и цикл над ним (Yolen → Dragonsteel), ничего не добавляет — не показываем
+            val parentBooks = subs.lastOrNull { k <= it.end && it.deep < item.deep }?.books ?: books
+            if (subBooks.map { it.id }.toSet() == parentBooks.map { it.id }.toSet()) return@forEachIndexed
+            subs += Sub(k, k + sub.size, item.deep, item.book, subBooks)
+        }
+        // книги подциклов показываются в них самих, а в развёрнутом цикле — только его собственные
+        fun nestedIn(from: Int, to: Int) =
+            subs.filter { it.k in from..to }.flatMap { s -> s.books.map { it.id } }.toSet()
+        val result = mutableListOf(AuthorSection(cycleBook.title, books, cycleBook.id, nested = nestedIn(0, children.size)))
+        subs.forEach { s ->
+            result += AuthorSection(s.book.title, s.books, s.book.id, depth = s.deep, nested = nestedIn(s.k + 1, s.end))
         }
         return result
     }

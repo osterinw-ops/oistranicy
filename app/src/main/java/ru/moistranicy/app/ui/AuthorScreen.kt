@@ -213,7 +213,19 @@ private fun AuthorContent(details: AuthorDetails, onBook: (String) -> Unit) {
                 }
             }
             if (open) {
-                itemsIndexed(s.books, key = { _, b -> "c$cid/${b.id}" }) { i, b ->
+                // книги подциклов видны в них самих (ниже, лесенкой) — здесь только собственные книги цикла
+                val own = s.books.withIndex().filter { it.value.id !in s.nested }
+                if (own.isEmpty()) {
+                    item(key = "c$cid/empty") {
+                        Text(
+                            "все книги — в подциклах ниже",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = (36 + 18 * s.depth).dp, top = 2.dp, bottom = 4.dp),
+                        )
+                    }
+                }
+                items(own, key = { iv -> "c$cid/${iv.value.id}" }) { (i, b) ->
                     CompactBookLine(
                         number = i + 1,
                         title = b.title,
