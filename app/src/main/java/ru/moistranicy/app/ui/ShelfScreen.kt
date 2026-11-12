@@ -165,18 +165,23 @@ private fun buildGroups(
         ) continue
         // книги с полки из цикла с тем же названием и автором, но другим id на FantLab
         // (например, «Дозоры» как подцикл и как цикл) — показываем в этом же цикле, без дубля
+        // (или книга, у которой цикл указан только названием, — например, из импорта)
         val cname = normTitle(c.name)
         val cAuthors = c.authors.mapNotNull { it.id }.toSet()
+        val cAuthorNames = c.authors.map { normTitle(it.name) }.toSet()
         val bookIds = c.books.map { it.id }.toSet()
         val twins = shelf.values.filter { e ->
             val sid = e.book.seriesId
-            e.book.id !in bookIds && sid != null && sid != c.id && !cycles.containsKey(sid) &&
+            e.book.id !in bookIds && sid != c.id && (sid == null || !cycles.containsKey(sid)) &&
                 e.book.seriesName?.let { normTitle(it) } == cname &&
-                (cAuthors.isEmpty() || e.book.authors.any { it.id in cAuthors }) &&
+                (cAuthors.isEmpty() && cAuthorNames.isEmpty() ||
+                    e.book.authors.any { it.id in cAuthors || normTitle(it.name) in cAuthorNames }) &&
                 !isHiddenType(e.book.workType)
         }
         twins.forEach { used += it.book.id }
-        val twinLines = twins.filter { it.status == status }.map { e ->
+        // та же книга под другим id («Танцы на снегу» 2000 и 2001) — второй строкой не показываем
+        val cycleTitles = c.books.map { normTitle(it.title) }.toSet()
+        val twinLines = twins.filter { it.status == status && normTitle(it.book.title) !in cycleTitles }.map { e ->
             Line(e.book.id, null, e.book.title, e.book.year, false, true)
         }
         val lines = books.filter { (_, b) ->
