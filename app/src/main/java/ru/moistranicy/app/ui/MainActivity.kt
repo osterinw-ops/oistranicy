@@ -195,6 +195,7 @@ fun AppRoot(
             }
             openRequest.startsWith("book:") -> nav.openBook(openRequest.removePrefix("book:"))
             openRequest.startsWith("author:") -> nav.openAuthor(openRequest.removePrefix("author:"))
+            openRequest.startsWith("route:") -> nav.navigate(openRequest.removePrefix("route:"))
         }
         if (openRequest != null) onOpenHandled()
     }

@@ -46,7 +46,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cd screens && zip -q ../screens-${{ inputs.device }}.zip *.png && cd ..
+          cd screens && zip -q ../screens-${{ inputs.device }}.zip *.png *.txt && cd ..
           gh release delete screenshots-${{ inputs.device }} -y --cleanup-tag || true
           gh release create screenshots-${{ inputs.device }} screens/*.png screens-${{ inputs.device }}.zip \
             --title "Скриншоты (${{ inputs.device }})" --notes "Скриншоты для карточки в магазине." --prerelease

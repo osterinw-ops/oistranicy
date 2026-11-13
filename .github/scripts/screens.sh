@@ -44,4 +44,25 @@ shot 03-shelf-reading shelf:READING 8
 shot 06-authors-cloud tab:authors 12
 shot 07-recommendations tab:recs 25
 shot 08-profile tab:profile 6
+# ---- читалка: открываем тестовые FB2 и EPUB как «Открыть с помощью» ----
+SZ=$(adb shell wm size | tr -d '\r' | awk -F': ' '{print $2}' | tail -1); W=${SZ%x*}; H=${SZ#*x}
+for f in test.fb2 test.epub; do
+  adb push .github/test-books/$f /data/local/tmp/$f
+  adb shell chmod 644 /data/local/tmp/$f
+  adb shell run-as $PKG cp /data/local/tmp/$f files/$f
+done
+adb shell am start -W -a android.intent.action.VIEW -t application/x-fictionbook+xml \
+  -d file:///data/data/$PKG/files/test.fb2 -n $PKG/.ui.MainActivity
+sleep 8; adb exec-out screencap -p > "$OUT/10-reader-fb2.png"
+adb shell input tap $((W*85/100)) $((H/2)); sleep 2; adb exec-out screencap -p > "$OUT/11-reader-page2.png"
+adb shell input swipe $((W*80/100)) $((H/2)) $((W*20/100)) $((H/2)) 200; sleep 2
+adb shell input tap $((W/2)) $((H/2)); sleep 2; adb exec-out screencap -p > "$OUT/12-reader-menu.png"
+adb shell input keyevent 4; sleep 2
+adb shell am start -W -a android.intent.action.VIEW -t application/epub+zip \
+  -d file:///data/data/$PKG/files/test.epub -n $PKG/.ui.MainActivity
+sleep 8; adb exec-out screencap -p > "$OUT/13-reader-epub.png"
+adb shell input keyevent 4; sleep 2
+shot 14-library route:library 6
+shot 15-profile tab:profile 6
+adb logcat -d | grep -iE "AndroidRuntime|FATAL|moistranicy" | tail -40 > "$OUT/logcat.txt" || true
 ls -la "$OUT"
