@@ -835,7 +835,7 @@ private fun utcDayToLocalNoon(utc: Long): Long {
 }
 
 /**
- * Кнопки статуса книги: три плитки во всю ширину со значком и подписью.
+ * Кнопки статуса книги: три плитки во всю ширину с подписью (без значков).
  * Выбранная — фирменный фиолетовый градиент, остальные — спокойная подложка.
  */
 @Composable
@@ -843,20 +843,10 @@ private fun StatusButtons(current: ReadStatus?, onClick: (ReadStatus) -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         ru.moistranicy.app.data.VISIBLE_STATUSES.forEach { s ->
             val selected = current == s
-            val icon = when (s) {
-                ReadStatus.READING -> R.drawable.ic_eye
-                ReadStatus.READ -> R.drawable.ic_star
-                else -> R.drawable.ic_bookmark
-            }
-            val accent = when (s) {
-                ReadStatus.READING -> EyeBlue
-                ReadStatus.READ -> Coral
-                else -> Violet
-            }
             Column(
                 Modifier
                     .weight(1f)
-                    .height(62.dp)
+                    .height(46.dp)
                     .clip(RoundedCornerShape(14.dp))
                     .background(
                         if (selected) Brush.horizontalGradient(listOf(Violet, VioletDeep))
@@ -867,13 +857,6 @@ private fun StatusButtons(current: ReadStatus?, onClick: (ReadStatus) -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
-                Icon(
-                    painterResource(icon),
-                    contentDescription = null,
-                    tint = if (selected) Color.White else accent,
-                    modifier = Modifier.size(22.dp),
-                )
-                Spacer(Modifier.height(3.dp))
                 Text(
                     s.title,
                     style = MaterialTheme.typography.labelMedium,
