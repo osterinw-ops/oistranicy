@@ -401,19 +401,30 @@ fun ExternalSourcesRow(query: String, label: String, modifier: Modifier = Modifi
                     Modifier
                         .size(46.dp)
                         .clip(RoundedCornerShape(11.dp))
-                        .then(if (loaded) Modifier else Modifier.background(Brush.linearGradient(listOf(Violet, VioletDeep))))
+                        .then(if (loaded || src.iconRes != null) Modifier else Modifier.background(Brush.linearGradient(listOf(Violet, VioletDeep))))
                         .clickable { runCatching { uri.openUri(src.url(query)) } },
                     contentAlignment = Alignment.Center,
                 ) {
-                    // пока значок сайта не загрузился — первая буква на фирменном градиенте
-                    if (!loaded) Text(src.name.take(1), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    AsyncImage(
-                        model = src.iconUrl,
-                        contentDescription = src.name,
-                        contentScale = ContentScale.Fit,
-                        onSuccess = { loaded = true },
-                        modifier = Modifier.fillMaxSize().padding(2.dp),
-                    )
+                    val res = src.iconRes
+                    if (res != null) {
+                        // свой логотип сервиса из приложения
+                        androidx.compose.foundation.Image(
+                            androidx.compose.ui.res.painterResource(res),
+                            contentDescription = src.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        // пока значок сайта не загрузился — первая буква на фирменном градиенте
+                        if (!loaded) Text(src.name.take(1), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        AsyncImage(
+                            model = src.iconUrl,
+                            contentDescription = src.name,
+                            contentScale = ContentScale.Fit,
+                            onSuccess = { loaded = true },
+                            modifier = Modifier.fillMaxSize().padding(2.dp),
+                        )
+                    }
                 }
             }
         }
