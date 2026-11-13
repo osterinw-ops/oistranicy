@@ -396,15 +396,12 @@ fun ExternalSourcesRow(query: String, label: String, modifier: Modifier = Modifi
         ) {
             ru.moistranicy.app.data.ExternalSources.all.forEach { src ->
                 var loaded by androidx.compose.runtime.remember(src.name) { androidx.compose.runtime.mutableStateOf(false) }
+                // значок сайта сам по себе, без белой подложки и тени
                 Box(
                     Modifier
                         .size(46.dp)
-                        .shadow(1.dp, RoundedCornerShape(11.dp))
                         .clip(RoundedCornerShape(11.dp))
-                        .background(
-                            if (loaded) Brush.linearGradient(listOf(Color.White, Color.White))
-                            else Brush.linearGradient(listOf(Violet, VioletDeep)),
-                        )
+                        .then(if (loaded) Modifier else Modifier.background(Brush.linearGradient(listOf(Violet, VioletDeep))))
                         .clickable { runCatching { uri.openUri(src.url(query)) } },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -415,7 +412,7 @@ fun ExternalSourcesRow(query: String, label: String, modifier: Modifier = Modifi
                         contentDescription = src.name,
                         contentScale = ContentScale.Fit,
                         onSuccess = { loaded = true },
-                        modifier = Modifier.fillMaxSize().padding(7.dp),
+                        modifier = Modifier.fillMaxSize().padding(2.dp),
                     )
                 }
             }
