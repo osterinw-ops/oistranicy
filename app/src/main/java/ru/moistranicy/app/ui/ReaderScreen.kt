@@ -136,10 +136,6 @@ private const val READER_JS = """
  var R = window.__rd || (window.__rd = {});
  R.count = function(){ var w = R.w || window.innerWidth; return Math.max(1, Math.ceil((document.documentElement.scrollWidth - 2) / w)); };
  R.report = function(){
-  var d = document.documentElement;
-  console.log('rd layout sw=' + d.scrollWidth + ' iw=' + window.innerWidth + ' ih=' + window.innerHeight +
-   ' bw=' + document.body.clientWidth + ' bh=' + document.body.clientHeight + ' txt=' + (document.body.innerText || '').length +
-   ' cw=' + getComputedStyle(document.body).columnWidth + ' color=' + getComputedStyle(document.body).color);
   RdBridge.onLayout(R.count());
  };
  if (!R.resizeHooked) { R.resizeHooked = true; window.addEventListener('resize', function(){ setTimeout(R.report, 60); }); }
