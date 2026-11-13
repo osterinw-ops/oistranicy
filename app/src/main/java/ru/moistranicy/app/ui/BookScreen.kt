@@ -89,8 +89,16 @@ private object WorkCache {
 }
 
 @Composable
-fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAuthor: (String) -> Unit) {
+fun BookScreen(
+    id: String,
+    onBack: () -> Unit,
+    onBook: (String) -> Unit,
+    onAuthor: (String) -> Unit,
+    onRead: (String) -> Unit = {},
+) {
     val shelf by ShelfRepository.entries.collectAsState()
+    val library by ru.moistranicy.app.data.reader.Library.books.collectAsState()
+    val file = library.values.firstOrNull { it.linkedId == id }
     val entry = shelf[id]
     var details by remember(id) { mutableStateOf(WorkCache.map[id]) }
     var loading by remember(id) { mutableStateOf(false) }
@@ -499,6 +507,14 @@ fun BookScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit, onAutho
             }
 
             Spacer(Modifier.height(16.dp))
+            // файл книги уже в библиотеке читалки — читать с места остановки
+            if (file != null) {
+                Spacer(Modifier.height(12.dp))
+                Button(onClick = { onRead(file.id) }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (file.progress > 0.005f) "Читать · ${(file.progress * 100).toInt()}%" else "Читать")
+                }
+                Spacer(Modifier.height(8.dp))
+            }
             ExternalSourcesRow(
                 ExternalSources.queryFor(book),
                 if (book.workType?.lowercase()?.contains("отрывок") == true) "Найти отрывок:" else "Найти книгу:",

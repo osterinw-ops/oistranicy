@@ -65,6 +65,7 @@ fun ProfileScreen(
     onUser: (String) -> Unit = {},
     onPeople: () -> Unit = {},
     onShelf: (ReadStatus) -> Unit = {},
+    onAuthor: (String) -> Unit = {},
 ) {
     val shelf by ShelfRepository.entries.collectAsState()
     val all = shelf.values
@@ -110,18 +111,19 @@ fun ProfileScreen(
                 }
             }
 
-            if (topAuthors.isNotEmpty()) {
+            // любимые жанры — одной строкой через «|», сколько поместится
+            val genres = favoriteGenres(all.filter { it.status == ReadStatus.READ })
+            if (genres.isNotEmpty()) {
                 Card {
-                    Text("Любимые авторы", style = MaterialTheme.typography.titleMedium)
+                    Text("Любимые жанры", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(6.dp))
-                    topAuthors.forEach { (name, n) ->
-                        Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-                            Text(name, Modifier.weight(1f))
-                            Text("$n", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
+                    GenresLine(genres)
                 }
             }
+
+            // облако любимых авторов (бывшая вкладка «Авторы»)
+            Text("Любимые авторы", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 4.dp))
+            AuthorsCloudCard(onAuthor = onAuthor, modifier = Modifier.fillMaxWidth().height(380.dp))
 
             SettingsCard()
             Spacer(Modifier.height(16.dp))
@@ -408,4 +410,25 @@ private fun ImportButton() {
             androidx.compose.material3.TextButton(onClick = { open = false }) { Text("Закрыть") }
         },
     )
+}
+
+
+/** Жанры через « | » — ровно столько, сколько помещается в одну строку. */
+@Composable
+private fun GenresLine(genres: List<String>) {
+    val style = MaterialTheme.typography.bodyLarge.copy(color = Coral)
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val maxPx = constraints.maxWidth
+        val line = remember(genres, maxPx, style) {
+            var acc = ""
+            for (g in genres) {
+                val next = if (acc.isEmpty()) g else "$acc | $g"
+                if (measurer.measure(next, style).size.width > maxPx) break
+                acc = next
+            }
+            acc.ifEmpty { genres.first() }
+        }
+        Text(line, style = style, maxLines = 1)
+    }
 }

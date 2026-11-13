@@ -6,6 +6,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import android.Manifest
 import android.content.Intent
+import androidx.compose.ui.draw.scale
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
 import android.os.Build
 import android.graphics.Color
 import android.os.Bundle
@@ -77,6 +83,12 @@ object TabReset {
 class MainActivity : ComponentActivity() {
     /** Вкладка, которую нужно открыть (например, из уведомления). */
     private val openRequest = mutableStateOf<String?>(null)
+    /** Файл книги, открытый через «Открыть с помощью» — импортируем в читалку. */
+    private val importUri = mutableStateOf<android.net.Uri?>(null)
+
+    private fun takeBook(i: Intent?) {
+        if (i?.action == Intent.ACTION_VIEW && i.data != null) importUri.value = i.data
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -84,6 +96,8 @@ class MainActivity : ComponentActivity() {
         ShelfRepository.init(applicationContext)
         CycleRepository.init(applicationContext)
         ru.moistranicy.app.data.LangCache.init(applicationContext)
+        ru.moistranicy.app.data.reader.Library.init(applicationContext)
+        ru.moistranicy.app.data.reader.ReaderPrefs.init(applicationContext)
         AuthorStats.init(applicationContext)
         KnownAuthors.init(applicationContext)
         RecBlock.init(applicationContext)
@@ -97,6 +111,7 @@ class MainActivity : ComponentActivity() {
         Notifier.ensureChannel(applicationContext)
         CycleCheckWorker.schedule(applicationContext)
         openRequest.value = intent?.getStringExtra(Notifier.EXTRA_OPEN)
+        takeBook(intent)
         enableEdgeToEdge()
         setContent {
             AppTheme {
@@ -108,7 +123,7 @@ class MainActivity : ComponentActivity() {
                     )
                     onDispose {}
                 }
-                AppRoot(openRequest.value) { openRequest.value = null }
+                AppRoot(openRequest.value, { openRequest.value = null }, importUri.value) { importUri.value = null }
             }
         }
     }
@@ -121,6 +136,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         openRequest.value = intent.getStringExtra(Notifier.EXTRA_OPEN)
+        takeBook(intent)
     }
 }
 
@@ -128,7 +144,6 @@ private data class Tab(val route: String, val label: String, val icon: ImageVect
 
 private val tabs = listOf(
     Tab("shelf", "Полка", Icons.Filled.Home),
-    Tab("authors", "Авторы", Icons.Filled.Face),
     Tab("recs", "Рекомендации", Icons.Filled.ThumbUp),
     Tab("search", "Поиск", Icons.Filled.Search),
     Tab("profile", "Профиль", Icons.Filled.Person),
@@ -139,7 +154,12 @@ fun NavHostController.openAuthor(id: String) = navigate("author/$id")
 fun NavHostController.openUser(id: String) = navigate("user/$id")
 
 @Composable
-fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
+fun AppRoot(
+    openRequest: String?,
+    onOpenHandled: () -> Unit,
+    importUri: android.net.Uri? = null,
+    onImportHandled: () -> Unit = {},
+) {
     val nav = rememberNavController()
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
@@ -179,6 +199,36 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
         if (openRequest != null) onOpenHandled()
     }
 
+    // книга, открытая через «Открыть с помощью», — в библиотеку и сразу в читалку
+    var importError by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(importUri) {
+        val u = importUri ?: return@LaunchedEffect
+        onImportHandled()
+        try {
+            val b = ru.moistranicy.app.data.reader.BookImporter.import(context, u)
+            nav.navigate("reader/${b.id}")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            importError = e.message ?: "Не удалось открыть книгу"
+        }
+    }
+    importError?.let { msg ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { importError = null },
+            title = { Text("Книга не открылась") },
+            text = { Text(msg) },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { importError = null }) { Text("Понятно") } },
+        )
+    }
+    /** Кнопка-логотип: последняя книга на месте остановки, без книг — библиотека. */
+    fun openReader() {
+        val last = ru.moistranicy.app.data.reader.Library.lastOpened()
+            ?: ru.moistranicy.app.data.reader.Library.books.value.values.maxByOrNull { it.addedAt }
+        nav.navigate(if (last != null) "reader/${last.id}" else "library") { launchSingleTop = true }
+    }
+    val inReader = route?.startsWith("reader/") == true
+
     // Разрешение на уведомления спрашиваем, когда появился первый отслеживаемый цикл
     val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
     val hasCycles = cycles.isNotEmpty()
@@ -192,8 +242,18 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
     Scaffold(
         contentWindowInsets = NoInsets,
         bottomBar = {
-            NavigationBar {
-                tabs.forEach { t ->
+            if (!inReader) NavigationBar {
+                tabs.forEachIndexed { ti, t ->
+                    if (ti == 2) {
+                        // по центру — логотип: открывает читалку там, где остановились
+                        NavigationBarItem(
+                            selected = false,
+                            onClick = { openReader() },
+                            icon = { ReaderLogoButton() },
+                            label = null,
+                            alwaysShowLabel = false,
+                        )
+                    }
                     NavigationBarItem(
                         selected = route == t.route,
                         onClick = {
@@ -263,6 +323,20 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
                     onSearch = { goTab("search"); currentTab = "search" },
                 )
             }
+            composable("library") {
+                LibraryScreen(
+                    onBack = { nav.popBackStack() },
+                    onOpen = { id -> nav.navigate("reader/$id") { popUpTo("library") { inclusive = true } } },
+                )
+            }
+            composable("reader/{id}") { e ->
+                ReaderScreen(
+                    bookId = e.arguments?.getString("id").orEmpty(),
+                    onBack = { nav.popBackStack() },
+                    onLibrary = { nav.navigate("library") },
+                    onShelfBook = { nav.openBook(it) },
+                )
+            }
             composable("authors") {
                 AuthorsCloudScreen(
                     onAuthor = { nav.openAuthor(it) },
@@ -298,6 +372,7 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
                     onBook = { nav.openBook(it) },
                     onUser = { nav.openUser(it) },
                     onPeople = { nav.navigate("people") },
+                    onAuthor = { nav.openAuthor(it) },
                     onShelf = { st ->
                         ShelfUi.tab = st.ordinal
                         goTab("shelf")
@@ -311,6 +386,7 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
                     onBack = { nav.popBackStack() },
                     onBook = { nav.openBook(it) },
                     onAuthor = { nav.openAuthor(it) },
+                    onRead = { nav.navigate("reader/$it") },
                 )
             }
             composable("author/{id}") { e ->
@@ -322,5 +398,27 @@ fun AppRoot(openRequest: String?, onOpenHandled: () -> Unit) {
             }
         }
     }
+    }
+}
+
+
+/** Кнопка-логотип в нижнем меню: цветной логотип в круге цвета панели, крупнее соседних значков. */
+@Composable
+private fun ReaderLogoButton() {
+    Box(
+        Modifier.size(56.dp).clip(androidx.compose.foundation.shape.CircleShape)
+            .background(androidx.compose.material3.NavigationBarDefaults.containerColor),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(Modifier.size(44.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))) {
+            androidx.compose.foundation.Image(
+                androidx.compose.ui.res.painterResource(ru.moistranicy.app.R.drawable.ic_launcher_background), "Читалка",
+                modifier = Modifier.matchParentSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            )
+            androidx.compose.foundation.Image(
+                androidx.compose.ui.res.painterResource(ru.moistranicy.app.R.drawable.ic_launcher_foreground), null,
+                modifier = Modifier.matchParentSize().scale(1.35f), contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            )
+        }
     }
 }

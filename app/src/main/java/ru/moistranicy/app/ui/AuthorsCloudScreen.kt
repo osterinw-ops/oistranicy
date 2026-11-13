@@ -318,3 +318,56 @@ private fun Cloud(
         }
     }
 }
+
+/** Облако авторов для профиля: размер — сколько прочитано, цвет — сколько автор написал. */
+@Composable
+fun AuthorsCloudCard(onAuthor: (String) -> Unit, modifier: Modifier = Modifier) {
+    val shelf by ShelfRepository.entries.collectAsState()
+    val totals by AuthorStats.totals.collectAsState()
+    val read = shelf.values.filter { it.status == ReadStatus.READ }
+    val authors = read.flatMap { e -> e.book.authors.map { it to e.book.id } }
+        .groupBy { it.first.name.trim() }
+        .filterKeys { it.isNotEmpty() }
+        .map { (name, list) ->
+            val id = list.firstNotNullOfOrNull { it.first.id?.takeIf { x -> x.startsWith("fl-") } }
+            Triple(name, id, list.map { it.second }.distinct().size)
+        }
+    val known = authors.mapNotNull { (_, id, _) -> id?.let { totals[it] } }
+    val tMin = known.minOrNull() ?: 0
+    val tMax = known.maxOrNull() ?: 0
+    val words = authors.filter { it.third >= 2 }.map { (name, id, count) ->
+        val total = id?.let { totals[it] }
+        val shade = total?.let { if (tMax == tMin) 0.6f else sqrt((it - tMin).toFloat() / (tMax - tMin)) }
+        CloudWord(name, name, count, shade, id)
+    }
+    LaunchedEffect(read.size) {
+        AuthorStats.ensure(authors.mapNotNull { it.second })
+        enrichGenres(read)
+    }
+    if (words.isEmpty()) {
+        Box(
+            modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(CloudBg),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                "Здесь появятся авторы,\nу которых вы прочитали 2 книги и больше",
+                style = MaterialTheme.typography.bodySmall,
+                color = VioletDark.copy(alpha = 0.6f),
+                textAlign = TextAlign.Center,
+            )
+        }
+    } else {
+        Cloud(
+            words = words, bg = CloudBg, light = VioletLight, mid = Violet, dark = VioletDark,
+            minSp = 11f, maxSp = 26f, modifier = modifier,
+        ) { w -> w.id?.let(onAuthor) }
+    }
+}
+
+/** Жанры прочитанных книг — от самых читаемых. */
+fun favoriteGenres(read: Collection<ShelfEntry>): List<String> =
+    read.flatMap { e -> e.book.genres.map { genreKey(it) }.distinct().map { g -> g to e.book.id } }
+        .filter { it.first.isNotBlank() }
+        .groupBy { it.first }
+        .entries.sortedByDescending { it.value.size }
+        .map { it.key }
