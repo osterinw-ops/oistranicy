@@ -161,9 +161,13 @@ private fun AuthorContent(details: AuthorDetails, onBook: (String) -> Unit) {
         if (cycleSections.isNotEmpty()) {
             item { SectionTitle("Циклы") }
         }
+        // свёрнутый цикл прячет и все свои подциклы: видно только верхний уровень
+        var hideDeeperThan = Int.MAX_VALUE
         cycleSections.forEach { s ->
+            if (s.depth > hideDeeperThan) return@forEach
             val cid = s.cycleId!!
             val open = expanded[cid] == true
+            hideDeeperThan = if (open) Int.MAX_VALUE else s.depth
             val published = s.books.filter { it.published && markFor(it, d.id) == null }
             val read = published.count { shelf[it.id]?.status == ReadStatus.READ }
             item(key = "c$cid") {
