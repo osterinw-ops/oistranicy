@@ -6,6 +6,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import android.Manifest
 import android.content.Intent
+import kotlinx.coroutines.launch
 import androidx.compose.ui.draw.scale
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.draw.clip
@@ -202,17 +203,21 @@ fun AppRoot(
 
     // книга, открытая через «Открыть с помощью», — в библиотеку и сразу в читалку
     var importError by remember { mutableStateOf<String?>(null) }
+    val importScope = androidx.compose.runtime.rememberCoroutineScope()
     LaunchedEffect(importUri) {
         val u = importUri ?: return@LaunchedEffect
-        onImportHandled()
-        try {
-            val b = ru.moistranicy.app.data.reader.BookImporter.import(context, u)
-            nav.navigate("reader/${b.id}")
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            importError = e.message ?: "Не удалось открыть книгу"
+        // импорт — в своей корутине: сброс importUri не должен его отменять
+        importScope.launch {
+            try {
+                val b = ru.moistranicy.app.data.reader.BookImporter.import(context, u)
+                nav.navigate("reader/${b.id}")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                importError = e.message ?: "Не удалось открыть книгу"
+            }
         }
+        onImportHandled()
     }
     importError?.let { msg ->
         androidx.compose.material3.AlertDialog(

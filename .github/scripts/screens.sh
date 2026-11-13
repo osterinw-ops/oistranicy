@@ -60,9 +60,10 @@ adb shell input tap $((W/2)) $((H/2)); sleep 2; adb exec-out screencap -p > "$OU
 adb shell input keyevent 4; sleep 2
 adb shell am start -W -a android.intent.action.VIEW -t application/epub+zip \
   -d file:///data/data/$PKG/files/test.epub -n $PKG/.ui.MainActivity
-sleep 8; adb exec-out screencap -p > "$OUT/13-reader-epub.png"
+sleep 10; adb exec-out screencap -p > "$OUT/13-reader-epub.png"
+adb shell input tap $((W*85/100)) $((H/2)); sleep 2; adb exec-out screencap -p > "$OUT/13b-reader-epub-p2.png"
 adb shell input keyevent 4; sleep 2
 shot 14-library route:library 6
 shot 15-profile tab:profile 6
-adb logcat -d | grep -iE "AndroidRuntime|FATAL|moistranicy" | tail -40 > "$OUT/logcat.txt" || true
+adb logcat -d | grep -iE "AndroidRuntime|FATAL|MoiReader|chromium" | tail -80 > "$OUT/logcat.txt" || true
 ls -la "$OUT"

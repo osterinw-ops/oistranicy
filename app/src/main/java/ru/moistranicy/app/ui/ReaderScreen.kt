@@ -135,7 +135,14 @@ private const val READER_JS = """
 (function(){
  var R = window.__rd || (window.__rd = {});
  R.count = function(){ var w = window.innerWidth; return Math.max(1, Math.ceil((document.documentElement.scrollWidth - 2) / w)); };
- R.report = function(){ RdBridge.onLayout(R.count()); };
+ R.report = function(){
+  var d = document.documentElement;
+  console.log('rd layout sw=' + d.scrollWidth + ' iw=' + window.innerWidth + ' ih=' + window.innerHeight +
+   ' bw=' + document.body.clientWidth + ' bh=' + document.body.clientHeight + ' txt=' + (document.body.innerText || '').length +
+   ' cw=' + getComputedStyle(document.body).columnWidth + ' color=' + getComputedStyle(document.body).color);
+  RdBridge.onLayout(R.count());
+ };
+ if (!R.resizeHooked) { R.resizeHooked = true; window.addEventListener('resize', function(){ setTimeout(R.report, 60); }); }
  R.go = function(p){ var x = p * window.innerWidth; window.scrollTo(x, 0); document.documentElement.scrollLeft = x; document.body.scrollLeft = x; };
  R.apply = function(css){
   var s = document.getElementById('__rdcss');
@@ -272,6 +279,12 @@ fun ReaderScreen(bookId: String, onBack: () -> Unit, onLibrary: () -> Unit, onSh
                             settings.textZoom = 100
                             @Suppress("JavascriptInterface")
                             addJavascriptInterface(bridge, "RdBridge")
+                            webChromeClient = object : android.webkit.WebChromeClient() {
+                                override fun onConsoleMessage(m: android.webkit.ConsoleMessage): Boolean {
+                                    android.util.Log.i("MoiReader", m.message() + " @" + m.lineNumber())
+                                    return true
+                                }
+                            }
                             webViewClient = object : WebViewClient() {
                                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = true
                                 override fun onPageFinished(view: WebView, url: String?) {
