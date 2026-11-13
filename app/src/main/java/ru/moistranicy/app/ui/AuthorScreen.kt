@@ -56,6 +56,11 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.CancellationException
 import ru.moistranicy.app.data.AuthorDetails
 import ru.moistranicy.app.data.FantLab
+import ru.moistranicy.app.data.LangCache
+import ru.moistranicy.app.data.isForeignTitle
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 
 private object AuthorCache {
     val map = HashMap<String, AuthorDetails>()
@@ -129,6 +134,23 @@ private fun AuthorContent(details: AuthorDetails, onBook: (String) -> Unit) {
     }
     val shelf by ShelfRepository.entries.collectAsState()
     val tracked by CycleRepository.cycles.collectAsState()
+    // «не на русском» — по изданиям на FantLab, а не по названию: проверяем книги с нерусским названием
+    LaunchedEffect(d.id, d.sections.size) {
+        val toCheck = d.sections.flatMap { it.books }
+            .filter { it.id.startsWith("fl-") && !it.isCycle && !LangCache.has(it.id) && isForeignTitle(it.title) }
+            .distinctBy { it.id }.take(40)
+        var failed = 0
+        for (part in toCheck.chunked(4)) {
+            // сервер не отдаёт сведения об изданиях — остаёмся при проверке по названию
+            if (failed >= 4) break
+            coroutineScope {
+                part.map { b -> async { b to runCatching { FantLab.hasRussianEdition(b.id) } } }.awaitAll()
+            }.forEach { (b, res) ->
+                if (res.isFailure) { failed++; return@forEach }
+                LangCache.put(b.id, res.getOrNull()?.let { !it } ?: isForeignTitle(b.title))
+            }
+        }
+    }
     // все циклы изначально свёрнуты
     val expanded = remember(d.id) { mutableStateMapOf<String, Boolean>() }
 

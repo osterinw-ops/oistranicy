@@ -1,6 +1,7 @@
 package ru.moistranicy.app.data
 
 import android.content.Context
+import androidx.compose.runtime.mutableIntStateOf
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.Executors
@@ -14,6 +15,9 @@ object LangCache {
     private val io = Executors.newSingleThreadExecutor()
     private val map = HashMap<String, Boolean>()
 
+    /** Растёт при каждой новой проверке: экраны, где видны отметки «не на русском», перерисовываются. */
+    private val version = mutableIntStateOf(0)
+
     @Synchronized
     fun init(context: Context) {
         if (::file.isInitialized) return
@@ -26,15 +30,21 @@ object LangCache {
         }
     }
 
-    @Synchronized fun foreign(id: String): Boolean? = map[id]
+    fun foreign(id: String): Boolean? {
+        version.intValue
+        return synchronized(this) { map[id] }
+    }
     @Synchronized fun has(id: String): Boolean = map.containsKey(id)
 
-    @Synchronized
     fun put(id: String, foreign: Boolean) {
-        map[id] = foreign
-        if (!::file.isInitialized) return
-        val json = JSONObject(map as Map<*, *>).toString()
-        io.execute { runCatching { file.writeText(json) } }
+        synchronized(this) {
+            map[id] = foreign
+            if (::file.isInitialized) {
+                val json = JSONObject(map as Map<*, *>).toString()
+                io.execute { runCatching { file.writeText(json) } }
+            }
+        }
+        version.intValue++
     }
 }
 
