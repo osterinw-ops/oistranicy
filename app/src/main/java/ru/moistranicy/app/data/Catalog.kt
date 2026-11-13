@@ -293,11 +293,19 @@ object FantLab {
             p.items.filter { b -> b.authors.any { it.id == id } }.forEach { books[it.id] = it }
             if (!p.hasMore) break
         }
-        if (books.isEmpty()) throw java.io.IOException("Автор не найден на FantLab")
+        // книги автора с полки и его отслеживаемые циклы: поиск по имени находит не всё
+        // (Андрей Зорин — только рассказы), а прочитанное должно быть на его странице
+        val mine = ShelfRepository.entries.value.values.map { it.book }
+            .filter { b -> b.authors.any { it.id == id } && !isHiddenType(b.workType) }
+        mine.forEach { books.putIfAbsent(it.id, it) }
+        val trackedCycles = CycleRepository.cycles.value.values.filter { c -> c.authors.any { it.id == id } }
+        if (books.isEmpty() && trackedCycles.isEmpty()) throw java.io.IOException("Автор не найден на FantLab")
         val (found, works) = books.values.partition { it.isCycle }
         // циклы автора: найденные поиском и те, в которые входят его книги (по карточкам книг)
         val cycleRefs = LinkedHashMap<String, String>()
-        val probe = works.filter { !isMinor(it.workType) }.take(24)
+        val mineIds = mine.map { it.id }.toSet()
+        val probe = (works.filter { it.id in mineIds && it.id.startsWith("fl-") } + works.filter { it.id !in mineIds && !isMinor(it.workType) })
+            .distinctBy { it.id }.take(30)
         probe.chunked(6).forEach { part ->
             coroutineScope {
                 part.map { b -> async { runCatching { work(b.id) }.getOrNull() } }.awaitAll()
@@ -307,7 +315,10 @@ object FantLab {
             }
         }
         found.forEach { cycleRefs.putIfAbsent(it.id, it.title) }
-        val cycleDetails = cycleRefs.keys.take(12).chunked(4).flatMap { part ->
+        // после циклов верхнего уровня — отслеживаемые циклы и циклы книг с полки (если их подцикл ещё не показан)
+        trackedCycles.forEach { cycleRefs.putIfAbsent(it.id, it.name) }
+        mine.forEach { b -> b.seriesId?.takeIf { it.startsWith("fl-") }?.let { cycleRefs.putIfAbsent(it, b.seriesName.orEmpty()) } }
+        val cycleDetails = cycleRefs.keys.take(16).chunked(4).flatMap { part ->
             coroutineScope { part.map { cid -> async { runCatching { work(cid) }.getOrNull() } }.awaitAll() }
         }.filterNotNull()
         val seen = HashSet<String>()
