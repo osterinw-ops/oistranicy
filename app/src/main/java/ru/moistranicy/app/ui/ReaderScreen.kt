@@ -109,14 +109,14 @@ private val READER_THEMES = listOf(
 private fun hex(c: Color) = "#%06X".format(0xFFFFFF and c.toArgb())
 
 /** Стили читателя поверх стилей книги + разбиение на страницы колонками. */
-private fun readerCss(): String {
+private fun readerCss(w: Int, h: Int): String {
     val (bg, fg) = READER_THEMES[ReaderPrefs.theme].second
     val m = ReaderPrefs.margin
     val font = if (ReaderPrefs.serif) "'Noto Serif', Georgia, serif" else "Roboto, 'Noto Sans', sans-serif"
     return """
-html{height:100%!important;overflow:hidden!important;margin:0!important;padding:0!important;background:${hex(bg)}!important;}
-body{margin:0!important;padding:20px ${m}px!important;box-sizing:border-box!important;height:100vh!important;
--webkit-column-width:calc(100vw - ${2 * m}px)!important;column-width:calc(100vw - ${2 * m}px)!important;
+html{width:${w}px!important;height:${h}px!important;overflow:hidden!important;margin:0!important;padding:0!important;background:${hex(bg)}!important;}
+body{margin:0!important;padding:20px ${m}px!important;box-sizing:border-box!important;width:${w}px!important;height:${h}px!important;
+-webkit-column-width:${w - 2 * m}px!important;column-width:${w - 2 * m}px!important;
 -webkit-column-gap:${2 * m}px!important;column-gap:${2 * m}px!important;column-fill:auto!important;
 background:${hex(bg)}!important;color:${hex(fg)}!important;font-size:${ReaderPrefs.fontSize}px!important;
 line-height:${ReaderPrefs.lineHeight}!important;font-family:$font!important;
@@ -124,7 +124,7 @@ text-align:${if (ReaderPrefs.justify) "justify" else "left"}!important;-webkit-h
 overflow-wrap:break-word;widows:2;orphans:2;}
 body *{color:inherit!important;background-color:transparent!important;font-family:inherit!important;max-width:100%;}
 p,div,li,blockquote{line-height:inherit!important}
-img,svg,image{max-width:100%!important;max-height:calc(100vh - 40px)!important;height:auto;object-fit:contain;break-inside:avoid}
+img,svg,image{max-width:100%!important;max-height:${h - 40}px!important;height:auto;object-fit:contain;break-inside:avoid}
 a{text-decoration:none!important}
 h1,h2,h3,h4,.title{break-after:avoid}
 """.replace("\n", "")
@@ -134,7 +134,7 @@ h1,h2,h3,h4,.title{break-after:avoid}
 private const val READER_JS = """
 (function(){
  var R = window.__rd || (window.__rd = {});
- R.count = function(){ var w = window.innerWidth; return Math.max(1, Math.ceil((document.documentElement.scrollWidth - 2) / w)); };
+ R.count = function(){ var w = R.w || window.innerWidth; return Math.max(1, Math.ceil((document.documentElement.scrollWidth - 2) / w)); };
  R.report = function(){
   var d = document.documentElement;
   console.log('rd layout sw=' + d.scrollWidth + ' iw=' + window.innerWidth + ' ih=' + window.innerHeight +
@@ -143,8 +143,12 @@ private const val READER_JS = """
   RdBridge.onLayout(R.count());
  };
  if (!R.resizeHooked) { R.resizeHooked = true; window.addEventListener('resize', function(){ setTimeout(R.report, 60); }); }
- R.go = function(p){ var x = p * window.innerWidth; window.scrollTo(x, 0); document.documentElement.scrollLeft = x; document.body.scrollLeft = x; };
- R.apply = function(css){
+ R.go = function(p){ var x = p * (R.w || window.innerWidth); window.scrollTo(x, 0); document.documentElement.scrollLeft = x; document.body.scrollLeft = x; };
+ R.apply = function(css, w){
+  R.w = w;
+  var vp = document.querySelector('meta[name=viewport]');
+  if (!vp) { vp = document.createElement('meta'); vp.name = 'viewport'; (document.head || document.documentElement).appendChild(vp); }
+  vp.content = 'width=' + w + ',initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no';
   var s = document.getElementById('__rdcss');
   if (!s) { s = document.createElement('style'); s.id = '__rdcss'; (document.head || document.documentElement).appendChild(s); }
   s.textContent = css;
@@ -180,6 +184,9 @@ fun ReaderScreen(bookId: String, onBack: () -> Unit, onLibrary: () -> Unit, onSh
     var sheet by remember { mutableStateOf<String?>(null) }
     var finishDialog by remember { mutableStateOf(false) }
     var web by remember { mutableStateOf<WebView?>(null) }
+    /** Размер страницы в CSS-пикселях (= dp). */
+    var viewW by remember { mutableIntStateOf(0) }
+    var viewH by remember { mutableIntStateOf(0) }
     val (bg, fg) = READER_THEMES[ReaderPrefs.theme].second
 
     // открытие: книга — последняя прочитанная, на полке — «Читаю»
@@ -250,19 +257,22 @@ fun ReaderScreen(bookId: String, onBack: () -> Unit, onLibrary: () -> Unit, onSh
     }
 
     // настройки изменились — перевёрстка с сохранением места
-    val css = readerCss()
+    val css = readerCss(viewW, viewH)
     LaunchedEffect(css) {
         val w = web ?: return@LaunchedEffect
+        if (viewW <= 0 || viewH <= 0) return@LaunchedEffect
         landing = if (pages <= 1) 0f else page.toFloat() / pages
         w.setBackgroundColor(bg.toArgb())
-        w.evaluateJavascript("window.__rd && __rd.apply(${jsString(css)})", null)
+        w.evaluateJavascript("window.__rd && __rd.apply(${jsString(css)}, $viewW)", null)
     }
 
     DisposableEffect(bookId) { onDispose { save() } }
 
     Box(Modifier.fillMaxSize().background(bg).windowInsetsPadding(WindowInsets.systemBars)) {
         Column(Modifier.fillMaxSize()) {
-            Box(Modifier.weight(1f).fillMaxWidth()) {
+            androidx.compose.foundation.layout.BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                viewW = maxWidth.value.toInt()
+                viewH = maxHeight.value.toInt()
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
                     factory = { ctx ->
@@ -277,6 +287,8 @@ fun ReaderScreen(bookId: String, onBack: () -> Unit, onLibrary: () -> Unit, onSh
                             settings.setSupportZoom(false)
                             settings.builtInZoomControls = false
                             settings.textZoom = 100
+                            settings.useWideViewPort = true
+                            settings.loadWithOverviewMode = false
                             @Suppress("JavascriptInterface")
                             addJavascriptInterface(bridge, "RdBridge")
                             webChromeClient = object : android.webkit.WebChromeClient() {
@@ -289,7 +301,9 @@ fun ReaderScreen(bookId: String, onBack: () -> Unit, onLibrary: () -> Unit, onSh
                                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = true
                                 override fun onPageFinished(view: WebView, url: String?) {
                                     view.evaluateJavascript(READER_JS, null)
-                                    view.evaluateJavascript("__rd.apply(${jsString(readerCss())})", null)
+                                    if (viewW > 0 && viewH > 0) {
+                                        view.evaluateJavascript("__rd.apply(${jsString(readerCss(viewW, viewH))}, $viewW)", null)
+                                    }
                                 }
                             }
                             web = this
