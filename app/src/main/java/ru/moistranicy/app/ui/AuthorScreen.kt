@@ -194,11 +194,13 @@ private fun AuthorContent(details: AuthorDetails, onBook: (String) -> Unit) {
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
                     )
+                    // отслеживаемый или прочитанный целиком цикл — с галочкой и фирменным цветом
+                    val done = tracked.containsKey(cid) || (published.isNotEmpty() && read == published.size)
                     Text(
-                        (if (tracked.containsKey(cid)) "✓ " else "") +
+                        (if (done) "✓ " else "") +
                             (if (read > 0) "$read из ${published.size}" else "${published.size} кн."),
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (tracked.containsKey(cid)) MaterialTheme.colorScheme.primary
+                        color = if (done) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     // открыть страницу цикла (следить, описание)
