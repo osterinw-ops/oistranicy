@@ -151,17 +151,21 @@ fun isMinor(type: String?): Boolean {
 /**
  * Книги цикла по порядку: без вложенных подциклов-контейнеров и без мелких форм
  * (рассказы, статьи). Если цикл целиком из рассказов — оставляем их.
+ * [withMinor] — для библиографии автора: рассказы и повести цикла показываем в нём самом
+ * (в том числе вошедшие в сборник внутри цикла), а не отдельно от цикла.
  */
-fun cycleBooks(children: List<CycleItem>): List<CycleItem> {
+fun cycleBooks(children: List<CycleItem>, withMinor: Boolean = false): List<CycleItem> {
     // части и главы, вложенные в книгу (не в цикл), — не отдельные книги
     val top = mutableListOf<CycleItem>()
     var skipDeeperThan = Int.MAX_VALUE
     for (it in children) {
         if (it.deep > skipDeeperThan) continue
-        skipDeeperThan = if (it.book.isCycle) Int.MAX_VALUE else it.deep
+        val container = it.book.isCycle || (withMinor && isHiddenType(it.book.workType))
+        skipDeeperThan = if (container) Int.MAX_VALUE else it.deep
         top += it
     }
     val leaves = top.filter { !it.book.isCycle && !isHiddenType(it.book.workType) }.distinctBy { it.book.id }
+    if (withMinor) return leaves
     val major = leaves.filter { !isMinor(it.book.workType) }
     return major.ifEmpty { leaves }
 }

@@ -404,7 +404,7 @@ object FantLab {
      * отдельными разделами лесенкой. Цикл без раскрытого состава — ссылкой (cycleId = null).
      */
     private fun sectionsForCycle(cycleBook: Book, children: List<CycleItem>, seen: MutableSet<String>): List<AuthorSection> {
-        val books = cycleBooks(children).map { it.book }
+        val books = cycleBooks(children, withMinor = true).map { it.book }
         if (books.isEmpty()) return listOf(AuthorSection(cycleBook.title, listOf(cycleBook), null))
         // подциклы: позиция в children, глубина, книги
         class Sub(val k: Int, val end: Int, val deep: Int, val book: Book, val books: List<Book>)
@@ -412,7 +412,7 @@ object FantLab {
         children.forEachIndexed { k, item ->
             if (!item.book.isCycle || !seen.add(item.book.id)) return@forEachIndexed
             val sub = children.drop(k + 1).takeWhile { it.deep > item.deep }
-            val subBooks = cycleBooks(sub.map { it.copy(deep = it.deep - item.deep) }).map { it.book }
+            val subBooks = cycleBooks(sub.map { it.copy(deep = it.deep - item.deep) }, withMinor = true).map { it.book }
             if (subBooks.isEmpty()) return@forEachIndexed
             // подцикл с теми же книгами, что и цикл над ним (Yolen → Dragonsteel), ничего не добавляет — не показываем
             val parentBooks = subs.lastOrNull { k <= it.end && it.deep < item.deep }?.books ?: books
