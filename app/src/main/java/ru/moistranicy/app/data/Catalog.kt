@@ -159,7 +159,7 @@ object FantLab {
         // по одной фамилии первыми идут книги, где она в названии («Генерал Бессонов»),
         // а книги самого автора — дальше: смотрим несколько страниц
         val books = coroutineScope {
-            (1..3).map { p -> async { runCatching { searchWorks(query, p).items }.getOrDefault(emptyList()) } }.awaitAll()
+            (1..5).map { p -> async { runCatching { searchWorks(query, p).items }.getOrDefault(emptyList()) } }.awaitAll()
         }.flatten()
         val withId = books.flatMap { it.authors }.filter { usable(it) }
         // в списке книг у автора может не быть id — тогда берём его из карточки книги
@@ -171,7 +171,13 @@ object FantLab {
         val fromCards = coroutineScope {
             probes.map { b -> async { runCatching { work(b.id).book.authors.filter { usable(it) } }.getOrDefault(emptyList()) } }.awaitAll()
         }.flatten()
-        val authors = withId + fromCards
+        // авторы, которых приложение уже встречало (полка, прошлые поиски): «бессонов» → Александр Бессонов,
+        // даже если его книги не попали в первые страницы поиска
+        val fromKnown = KnownAuthors.snapshot().entries
+            .filter { (n, aid) -> aid?.startsWith("fl-") == true && words.all { it in norm(n) } }
+            .map { (n, aid) -> Person(aid, n) }
+        val fromShelf = ShelfRepository.entries.value.values.flatMap { it.book.authors }.filter { usable(it) }
+        val authors = withId + fromCards + fromShelf + fromKnown
         return authors.distinctBy { it.id }.map { a ->
             KnownAuthors.add(a.name, a.id!!)
             AuthorHit(a.id, a.name, "найден по книгам")
@@ -318,14 +324,39 @@ object FantLab {
         // после циклов верхнего уровня — отслеживаемые циклы и циклы книг с полки (если их подцикл ещё не показан)
         trackedCycles.forEach { cycleRefs.putIfAbsent(it.id, it.name) }
         mine.forEach { b -> b.seriesId?.takeIf { it.startsWith("fl-") }?.let { cycleRefs.putIfAbsent(it, b.seriesName.orEmpty()) } }
-        val cycleDetails = cycleRefs.keys.take(16).chunked(4).flatMap { part ->
-            coroutineScope { part.map { cid -> async { runCatching { work(cid) }.getOrNull() } }.awaitAll() }
-        }.filterNotNull()
+        // циклы грузим по 3 и с повтором: при большом числе запросов FantLab иногда отвечает ошибкой,
+        // и тогда циклы «разлетались» в список ссылок (Евгений Гарцевич)
+        val ids = cycleRefs.keys.take(30)
+        val loaded = HashMap<String, WorkDetails>()
+        ids.chunked(3).forEach { part ->
+            coroutineScope { part.map { cid -> async { cid to runCatching { work(cid) }.getOrNull() } }.awaitAll() }
+                .forEach { (cid, w) -> if (w != null) loaded[cid] = w }
+        }
+        ids.filter { it !in loaded }.forEach { cid ->
+            kotlinx.coroutines.delay(400)
+            runCatching { work(cid) }.getOrNull()?.let { loaded[cid] = it }
+        }
+        val cycleDetails = ids.mapNotNull { loaded[it] }
         val seen = HashSet<String>()
         val cycleSections = mutableListOf<AuthorSection>()
+        fun his(b: Book) = b.authors.any { it.id == id }
         for (cd in cycleDetails) {
             if (!seen.add(cd.book.id)) continue
-            cycleSections += sectionsForCycle(cd.book, cd.children, seen)
+            val tree = sectionsForCycle(cd.book, cd.children, seen)
+            if (tree.firstOrNull()?.cycleId == null) { cycleSections += tree; continue }
+            // только циклы, где есть книги этого автора (Андрей Зорин — не весь «Тайный город», а свой подцикл)
+            val withHis = tree.filter { sct -> sct.books.any { his(it) } }
+            if (withHis.isEmpty()) continue
+            val top = tree.first()
+            val topOwn = top.books.filter { it.id !in top.nested }
+            if (topOwn.any { his(it) } || withHis.size == 1 && withHis.first() === top) {
+                cycleSections += listOf(top) + withHis.filter { it !== top }
+            } else {
+                // верхний цикл чужой — поднимаем его подциклы с книгами автора на верхний уровень
+                val kept = withHis.filter { it !== top }
+                val base = kept.minOfOrNull { it.depth } ?: 0
+                cycleSections += kept.map { it.copy(depth = it.depth - base) }
+            }
         }
         // циклы верхнего уровня идут первыми, поэтому их подциклы (seen) отдельно не дублируются
         val (linked, links) = cycleSections.partition { it.cycleId != null }
@@ -398,6 +429,53 @@ object FantLab {
         d.copy(
             sections = d.sections.filter { it.cycleId != null } + found +
                 plain.map { s -> s.copy(books = s.books.filter { it.id !in moved }) }.filter { it.books.isNotEmpty() },
+        )
+    }
+
+    /**
+     * Романы из общих разделов («Романы», «Повести»), которые на самом деле входят в цикл
+     * (например, написанный в соавторстве и потому не попавший в циклы автора: «Арвендейл. Нечистая кровь»):
+     * узнаём их цикл на FantLab и переносим книгу туда; цикла нет на странице — добавляем его.
+     */
+    suspend fun attachToCycles(d: AuthorDetails): AuthorDetails = withContext(Dispatchers.IO) {
+        val plain = d.sections.filter { it.cycleId == null && it.title != "Другие циклы" }
+        val novels = plain.flatMap { it.books }
+            .filter { !it.isCycle && it.id.startsWith("fl-") && !isMinor(it.workType) }
+            .distinctBy { it.id }.take(24)
+        if (novels.isEmpty()) return@withContext d
+        val parentOf = HashMap<String, SeriesRef>()
+        novels.chunked(4).forEach { part ->
+            coroutineScope { part.map { b -> async { b.id to runCatching { work(b.id) }.getOrNull() } }.awaitAll() }
+                .forEach { (bid, w) -> w?.parents?.lastOrNull()?.let { parentOf[bid] = it } }
+        }
+        if (parentOf.isEmpty()) return@withContext d
+        val sections = d.sections.toMutableList()
+        val known = sections.mapNotNull { it.cycleId }.toHashSet()
+        val moved = HashSet<String>()
+        // циклы, которых на странице нет, — загружаем целиком (с подциклами)
+        val missing = parentOf.values.map { it.id }.distinct().filter { it !in known }.take(8)
+        val seen = HashSet(known)
+        missing.forEach { cid ->
+            val w = runCatching { work(cid) }.getOrNull() ?: return@forEach
+            if (!seen.add(cid)) return@forEach
+            val tree = sectionsForCycle(w.book, w.children, seen)
+            if (tree.firstOrNull()?.cycleId == null) return@forEach
+            val firstPlain = sections.indexOfFirst { it.cycleId == null }.let { if (it < 0) sections.size else it }
+            sections.addAll(firstPlain, tree)
+            tree.forEach { t -> moved += t.books.map { it.id } }
+        }
+        // цикл уже на странице, а книги в его списке нет (другое издание в составе) — добавляем в конец
+        parentOf.forEach { (bid, ref) ->
+            if (bid in moved) return@forEach
+            val k = sections.indexOfFirst { it.cycleId == ref.id }
+            if (k < 0) return@forEach
+            val book = novels.first { it.id == bid }
+            if (sections[k].books.none { it.id == bid }) sections[k] = sections[k].copy(books = sections[k].books + book)
+            moved += bid
+        }
+        d.copy(
+            sections = sections.map { sct -> if (sct.cycleId == null) sct.copy(books = sct.books.filter { it.id !in moved }) else sct }
+                .filter { it.books.isNotEmpty() },
         )
     }
 
@@ -505,7 +583,8 @@ object FantLab {
             workType = c.str("work_type").ifEmpty { null },
             isCycle = isCycleKind(c.str("work_type_name"), c.str("work_type")),
             communityRating = c.floatOrNull("val_midmark_by_weight") ?: c.floatOrNull("rating"),
-            published = isPublished(c.optInt("work_published", 1) == 1, c.optInt("work_preparing", 0) == 1, c.posInt("work_year")),
+            published = isPublished(c.optInt("work_published", 1) == 1, c.optInt("work_preparing", 0) == 1, c.posInt("work_year")) ||
+                ru.moistranicy.app.data.reader.Library.byLinked("fl-$wid") != null,
         )
         BookCache.put(book)
         return (BookCache.get(book.id) ?: book).copy(published = book.published)

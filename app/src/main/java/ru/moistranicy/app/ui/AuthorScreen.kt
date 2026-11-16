@@ -93,6 +93,12 @@ fun AuthorScreen(id: String, onBack: () -> Unit, onBook: (String) -> Unit) {
             val grouped = FantLab.groupNovelParts(d)
             AuthorCache.map[id] = grouped
             details = grouped
+            // романы, которые на самом деле входят в цикл, — переносим в цикл
+            val attached = runCatching { FantLab.attachToCycles(grouped) }.getOrNull()
+            if (attached != null && attached != grouped) {
+                AuthorCache.map[id] = attached
+                details = attached
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -183,25 +189,31 @@ private fun AuthorContent(details: AuthorDetails, onBook: (String) -> Unit) {
         if (cycleSections.isNotEmpty()) {
             item { SectionTitle("Циклы") }
         }
-        // свёрнутый цикл прячет и все свои подциклы: видно только верхний уровень
-        var hideDeeperThan = Int.MAX_VALUE
-        cycleSections.forEach { s ->
-            if (s.depth > hideDeeperThan) return@forEach
-            val cid = s.cycleId!!
+        // дерево циклов: у каждого подцикла родитель — ближайший раздел выше с меньшей глубиной
+        val parentOf = IntArray(cycleSections.size) { -1 }
+        cycleSections.forEachIndexed { k, sec ->
+            parentOf[k] = (k - 1 downTo 0).firstOrNull { cycleSections[it].depth < sec.depth } ?: -1
+        }
+        val childrenOf = cycleSections.indices.groupBy { parentOf[it] }
+        // циклы верхнего уровня — по алфавиту
+        val roots = childrenOf[-1].orEmpty().sortedBy { cycleSections[it].title.lowercase().replace('ё', 'е') }
+
+        fun cycleHeader(k: Int, level: Int) {
+            val sec = cycleSections[k]
+            val cid = sec.cycleId!!
             val open = expanded[cid] == true
-            hideDeeperThan = if (open) Int.MAX_VALUE else s.depth
-            val published = s.books.filter { it.published && markFor(it, d.id) == null }
+            val published = sec.books.filter { it.published && markFor(it, d.id) == null }
             val read = published.count { shelf[it.id]?.status == ReadStatus.READ }
             item(key = "c$cid") {
                 Row(
                     Modifier
                         .fillMaxWidth()
                         .clickable { expanded[cid] = !open }
-                        .padding(start = (12 + 18 * s.depth).dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+                        .padding(start = (12 + 18 * level).dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     // подцикл — ступенькой правее родителя, с уголком, чтобы было видно, куда он входит
-                    if (s.depth > 0) {
+                    if (level > 0) {
                         Text("└", style = MaterialTheme.typography.bodyMedium, color = Violet)
                         Spacer(Modifier.width(2.dp))
                     }
@@ -213,7 +225,7 @@ private fun AuthorContent(details: AuthorDetails, onBook: (String) -> Unit) {
                     )
                     Spacer(Modifier.width(4.dp))
                     Text(
-                        s.title,
+                        sec.title,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 2,
@@ -240,34 +252,47 @@ private fun AuthorContent(details: AuthorDetails, onBook: (String) -> Unit) {
                     }
                 }
             }
-            if (open) {
-                // книги подциклов видны в них самих (ниже, лесенкой) — здесь только собственные книги цикла
-                val own = s.books.withIndex().filter { it.value.id !in s.nested }
-                if (own.isEmpty()) {
-                    item(key = "c$cid/empty") {
-                        Text(
-                            "все книги — в подциклах ниже",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(start = (36 + 18 * s.depth).dp, top = 2.dp, bottom = 4.dp),
-                        )
-                    }
+        }
+
+        /**
+         * Раскрытый цикл: книги по порядку номеров, а подцикл встаёт на место своей первой книги
+         * («Мир вечного»: сначала «Охота на охотника» с книгами 1–4, потом «Вечный», «Хоаххин», затем книги 12 и 13).
+         */
+        fun cycleTree(k: Int, level: Int) {
+            cycleHeader(k, level)
+            val sec = cycleSections[k]
+            val cid = sec.cycleId!!
+            if (expanded[cid] != true) return
+            val subs = childrenOf[k].orEmpty()
+            val subBooks = subs.associateWith { j -> cycleSections[j].books.map { it.id }.toSet() }
+            val emitted = HashSet<Int>()
+            sec.books.forEachIndexed { i, b ->
+                val owner = subs.firstOrNull { j -> b.id in subBooks.getValue(j) }
+                if (owner != null) {
+                    if (emitted.add(owner)) cycleTree(owner, level + 1)
+                    return@forEachIndexed
                 }
-                items(own, key = { iv -> "c$cid/${iv.value.id}" }) { (i, b) ->
+                // книга, которую показывает подцикл глубже (но не прямой), тоже пропускаем
+                if (b.id in sec.nested) return@forEachIndexed
+                item(key = "c$cid/${b.id}") {
                     CompactBookLine(
                         number = i + 1,
                         title = b.title,
                         sub = listOfNotNull(b.year, if (!b.published) "ожидается" else null).joinToString(", "),
                         status = shelf[b.id]?.status,
                         published = b.published,
-                        indent = 36 + 18 * s.depth,
+                        indent = 36 + 18 * level,
                         mark = markFor(b, d.id),
                         statusIcon = true,
                         rating = shelf[b.id]?.rating,
                     ) { onBook(b.id) }
                 }
             }
+            // подциклы без книг в общем списке — в конце
+            subs.filter { it !in emitted }.forEach { cycleTree(it, level + 1) }
         }
+
+        roots.forEach { cycleTree(it, 0) }
 
         d.sections.filter { it.cycleId == null && it.books.isNotEmpty() }.forEachIndexed { si, s ->
             item(key = "s$si") { SectionTitle(s.title) }

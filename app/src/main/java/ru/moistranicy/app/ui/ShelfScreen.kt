@@ -338,8 +338,18 @@ private fun surnameKey(surnameFirstName: String): String =
     surnameFirstName.lowercase().replace('ё', 'е')
 
 @Composable
-fun ShelfScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit = {}, onSearch: () -> Unit = {}) {
+fun ShelfScreen(
+    onBook: (String) -> Unit,
+    onAuthor: (String) -> Unit = {},
+    onSearch: () -> Unit = {},
+    onRead: (String) -> Unit = {},
+) {
     val shelf by ShelfRepository.entries.collectAsState()
+    // книги-файлы читалки живут во «Читаю» (бывшая «Библиотека»)
+    val library by ru.moistranicy.app.data.reader.Library.books.collectAsState()
+    val files = library.values.sortedWith(
+        compareByDescending<ru.moistranicy.app.data.reader.LibBook> { it.openedAt }.thenByDescending { it.addedAt },
+    )
     val cycles by CycleRepository.cycles.collectAsState()
     val scope = rememberCoroutineScope()
     var checking by remember { mutableStateOf(false) }
@@ -355,7 +365,8 @@ fun ShelfScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit = {}, onSea
     // «Читаю» — отдельными книгами, без группировки по циклам
     val reading = shelf.values.filter { it.status == ReadStatus.READING }.sortedByDescending { it.updatedAt }
     // вкладка «Читаю» видна, только если есть книги с этим статусом
-    val statuses = ru.moistranicy.app.data.VISIBLE_STATUSES.filter { it != ReadStatus.READING || reading.isNotEmpty() }
+    val readingNoFile = reading.filter { e -> files.none { it.linkedId == e.book.id } }
+    val statuses = ru.moistranicy.app.data.VISIBLE_STATUSES.filter { it != ReadStatus.READING || reading.isNotEmpty() || files.isNotEmpty() }
     val groupsByStatus = statuses.associateWith { buildGroups(it, shelf, cycles, ShelfUi.readSort) }
     val selected = ReadStatus.entries.getOrElse(ShelfUi.tab) { ReadStatus.WANT }
     val current = if (selected in statuses) selected else ReadStatus.WANT
@@ -388,7 +399,7 @@ fun ShelfScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit = {}, onSea
         Column(Modifier.padding(pad)) {
             ScrollableTabRow(selectedTabIndex = tabIndex, edgePadding = 12.dp) {
                 statuses.forEachIndexed { i, s ->
-                    val count = if (s == ReadStatus.READING) reading.size
+                    val count = if (s == ReadStatus.READING) files.size + readingNoFile.size
                     else groupsByStatus.getValue(s).sumOf { if (it.isAuthor) it.readBooks else it.lines.size }
                     Tab(
                         selected = tabIndex == i,
@@ -397,9 +408,23 @@ fun ShelfScreen(onBook: (String) -> Unit, onAuthor: (String) -> Unit = {}, onSea
                     )
                 }
             }
-            if (current == ReadStatus.READING && reading.isNotEmpty()) {
+            if (current == ReadStatus.READING && (reading.isNotEmpty() || files.isNotEmpty())) {
                 LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(vertical = 6.dp)) {
-                    items(reading, key = { it.book.id }) { e -> ReadingRow(e, cycles) { onBook(e.book.id) } }
+                    item(key = "add-book") {
+                        AddBookButton(onOpen = onRead, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                    }
+                    items(files, key = { "f:" + it.id }) { b ->
+                        FileBookRow(b, b.linkedId?.let { shelf[it]?.book }) { onRead(b.id) }
+                    }
+                    items(readingNoFile, key = { it.book.id }) { e -> ReadingRow(e, cycles) { onBook(e.book.id) } }
+                    if (files.isNotEmpty()) item(key = "files-hint") {
+                        Text(
+                            "Долгое нажатие на книгу-файл — удалить файл с телефона.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(16.dp),
+                        )
+                    }
                 }
             } else if (groups.isEmpty() && current == ReadStatus.WANT) {
                 // пустой читательский план: плюсик ведёт в поиск

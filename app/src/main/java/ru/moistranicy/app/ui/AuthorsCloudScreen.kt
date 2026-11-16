@@ -344,21 +344,27 @@ fun AuthorsCloudCard(onAuthor: (String) -> Unit, modifier: Modifier = Modifier) 
         AuthorStats.ensure(authors.mapNotNull { it.second })
         enrichGenres(read)
     }
+    // тёмная тема: тёмная подложка, а частые авторы — светлее, а не темнее
+    val dark = isAppDark()
+    val bg = if (dark) Color(0xFF231E3A) else CloudBg
+    val cLight = if (dark) Color(0xFF6A60B0) else VioletLight
+    val cMid = if (dark) Color(0xFFA79CFF) else Violet
+    val cDark = if (dark) Color(0xFFE6E1FF) else VioletDark
     if (words.isEmpty()) {
         Box(
-            modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(CloudBg),
+            modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(bg),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 "Здесь появятся авторы,\nу которых вы прочитали 2 книги и больше",
                 style = MaterialTheme.typography.bodySmall,
-                color = VioletDark.copy(alpha = 0.6f),
+                color = cDark.copy(alpha = 0.6f),
                 textAlign = TextAlign.Center,
             )
         }
     } else {
         Cloud(
-            words = words, bg = CloudBg, light = VioletLight, mid = Violet, dark = VioletDark,
+            words = words, bg = bg, light = cLight, mid = cMid, dark = cDark,
             minSp = 11f, maxSp = 26f, modifier = modifier,
         ) { w -> w.id?.let(onAuthor) }
     }

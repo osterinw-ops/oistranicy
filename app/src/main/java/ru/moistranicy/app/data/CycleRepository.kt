@@ -54,6 +54,17 @@ object CycleRepository {
 
     fun get(id: String): TrackedCycle? = _cycles.value[id]
     fun isTracked(id: String) = _cycles.value.containsKey(id)
+
+    /** У пользователя есть файл книги — значит, она вышла, хотя на FantLab ещё «ожидается». */
+    @Synchronized
+    fun markPublished(bookId: String) {
+        var changed = false
+        val map = _cycles.value.mapValues { (_, c) ->
+            if (c.books.none { it.id == bookId && !it.published }) c
+            else { changed = true; c.copy(books = c.books.map { if (it.id == bookId) it.copy(published = true) else it }) }
+        }
+        if (changed) save(map)
+    }
     /** Пользователь сам перестал следить за циклом — автоматически не возвращаем. */
     fun wasUnfollowed(id: String) = deleted.containsKey(id)
 

@@ -27,6 +27,8 @@ object Linker {
     /** При открытии: связать (если ещё нет) и поставить «Читаю», если книга не прочитана. */
     suspend fun onOpen(b: LibBook) {
         val id = b.linkedId ?: find(b)?.also { found -> Library.update(b.id) { it.copy(linkedId = found.id) } }?.id ?: return
+        // файл книги уже есть — значит, она вышла, даже если на FantLab «ожидается»
+        ru.moistranicy.app.data.CycleRepository.markPublished(id)
         val st = ShelfRepository.get(id)?.status
         if (st == ReadStatus.READING || st == ReadStatus.READ) return
         val book = runCatching { FantLab.work(id).book }.getOrNull() ?: ru.moistranicy.app.data.BookCache.get(id) ?: return

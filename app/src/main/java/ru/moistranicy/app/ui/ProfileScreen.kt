@@ -337,6 +337,14 @@ private fun ImportButton() {
     val picker = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
     ) { uri -> if (uri != null) Importer.start(context, uri) }
+    // список ненайденных книг — в файл, чтобы пользователь знал, что не импортировалось
+    val saver = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("text/plain"),
+    ) { uri ->
+        if (uri != null) runCatching {
+            context.contentResolver.openOutputStream(uri)?.use { it.write(Importer.notFoundText().toByteArray()) }
+        }
+    }
     Text("Импорт", style = MaterialTheme.typography.titleSmall)
     androidx.compose.material3.OutlinedButton(onClick = { Importer.reset(); open = true }) {
         Text("Импорт прочитанных книг из файла")
@@ -369,8 +377,12 @@ private fun ImportButton() {
                         if (miss.isNotEmpty()) {
                             Spacer(Modifier.height(8.dp))
                             Text("Не нашлись:", style = MaterialTheme.typography.titleSmall)
+                            androidx.compose.material3.OutlinedButton(onClick = { saver.launch("не_найдены.txt") }) {
+                                Text("Скачать список ненайденных (${miss.size})")
+                            }
+                            Spacer(Modifier.height(4.dp))
                             miss.take(30).forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
-                            if (miss.size > 30) Text("…и ещё ${miss.size - 30}", style = MaterialTheme.typography.bodySmall)
+                            if (miss.size > 30) Text("…и ещё ${miss.size - 30} — полный список в файле", style = MaterialTheme.typography.bodySmall)
                         }
                     }
                     else -> {

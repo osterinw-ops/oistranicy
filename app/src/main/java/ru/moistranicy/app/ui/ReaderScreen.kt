@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -43,6 +44,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -99,6 +101,11 @@ import ru.moistranicy.app.data.reader.ReaderPrefs
 import java.io.File
 import kotlin.math.roundToInt
 
+/** Открыто ли меню читалки: тогда снизу видна основная панель приложения. */
+object ReaderUi {
+    var menu by mutableStateOf(false)
+}
+
 /** Цвета тем читалки: фон и текст. */
 private val READER_THEMES = listOf(
     "Светлая" to (Color(0xFFFFFFFF) to Color(0xFF1B1B1F)),
@@ -112,13 +119,20 @@ private fun hex(c: Color) = "#%06X".format(0xFFFFFF and c.toArgb())
 private fun readerCss(w: Int, h: Int): String {
     val (bg, fg) = READER_THEMES[ReaderPrefs.theme].second
     val m = ReaderPrefs.margin
+    // сепия — с лёгкой фактурой бумаги (шум SVG), чтобы глазам было мягче
+    val paper = if (ReaderPrefs.theme == 1)
+        "background-image:url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'>" +
+            "<filter id='p'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/>" +
+            "<feColorMatrix values='0 0 0 0 0.42 0 0 0 0 0.33 0 0 0 0 0.2 0 0 0 0.09 0'/></filter>" +
+            "<rect width='100%' height='100%' filter='url(%23p)'/></svg>\")!important;background-attachment:fixed!important;"
+    else ""
     val font = if (ReaderPrefs.serif) "'Noto Serif', Georgia, serif" else "Roboto, 'Noto Sans', sans-serif"
     return """
-html{width:${w}px!important;height:${h}px!important;overflow:hidden!important;margin:0!important;padding:0!important;background:${hex(bg)}!important;}
+html{width:${w}px!important;height:${h}px!important;overflow:hidden!important;margin:0!important;padding:0!important;background-color:${hex(bg)}!important;$paper}
 body{margin:0!important;padding:20px ${m}px!important;box-sizing:border-box!important;width:${w}px!important;height:${h}px!important;
 -webkit-column-width:${w - 2 * m}px!important;column-width:${w - 2 * m}px!important;
 -webkit-column-gap:${2 * m}px!important;column-gap:${2 * m}px!important;column-fill:auto!important;
-background:${hex(bg)}!important;color:${hex(fg)}!important;font-size:${ReaderPrefs.fontSize}px!important;
+background:transparent!important;color:${hex(fg)}!important;font-size:${ReaderPrefs.fontSize}px!important;
 line-height:${ReaderPrefs.lineHeight}!important;font-family:$font!important;
 text-align:${if (ReaderPrefs.justify) "justify" else "left"}!important;-webkit-hyphens:auto;hyphens:auto;
 overflow-wrap:break-word;widows:2;orphans:2;}
@@ -176,7 +190,8 @@ fun ReaderScreen(bookId: String, onBack: () -> Unit, onLibrary: () -> Unit, onSh
     var pages by remember(bookId) { mutableIntStateOf(1) }
     /** Куда встать после вёрстки главы: доля 0..1, -1 — последняя страница. */
     var landing by remember(bookId) { mutableStateOf<Float?>(book.frac) }
-    var menu by remember { mutableStateOf(false) }
+    var menu by ReaderUi::menu
+    DisposableEffect(Unit) { onDispose { ReaderUi.menu = false } }
     var sheet by remember { mutableStateOf<String?>(null) }
     var finishDialog by remember { mutableStateOf(false) }
     var web by remember { mutableStateOf<WebView?>(null) }
@@ -257,14 +272,19 @@ fun ReaderScreen(bookId: String, onBack: () -> Unit, onLibrary: () -> Unit, onSh
     LaunchedEffect(css) {
         val w = web ?: return@LaunchedEffect
         if (viewW <= 0 || viewH <= 0) return@LaunchedEffect
-        landing = if (pages <= 1) 0f else page.toFloat() / pages
+        // место ещё не восстановлено (первая вёрстка впереди) — не перебиваем его нулём
+        if (landing == null) landing = if (pages <= 1) 0f else page.toFloat() / pages
         w.setBackgroundColor(bg.toArgb())
         w.evaluateJavascript("window.__rd && __rd.apply(${jsString(css)}, $viewW)", null)
     }
 
     DisposableEffect(bookId) { onDispose { save() } }
 
-    Box(Modifier.fillMaxSize().background(bg).windowInsetsPadding(WindowInsets.systemBars)) {
+    // назад при открытом меню — закрыть меню
+    androidx.activity.compose.BackHandler(enabled = menu) { menu = false }
+    // с открытым меню снизу видна основная панель приложения — отступ только сверху
+    val insets = if (menu) WindowInsets.statusBars else WindowInsets.systemBars
+    Box(Modifier.fillMaxSize().background(bg).windowInsetsPadding(insets)) {
         Column(Modifier.fillMaxSize()) {
             androidx.compose.foundation.layout.BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                 viewW = maxWidth.value.toInt()
@@ -320,7 +340,8 @@ fun ReaderScreen(bookId: String, onBack: () -> Unit, onLibrary: () -> Unit, onSh
                                     when {
                                         o.x < size.width * 0.3f -> prev()
                                         o.x > size.width * 0.7f -> next()
-                                        else -> menu = !menu
+                                        // меню — только долгим нажатием; тап по центру закрывает открытое меню
+                                        else -> if (menu) menu = false
                                     }
                                 },
                                 onLongPress = { menu = !menu },
@@ -345,38 +366,61 @@ fun ReaderScreen(bookId: String, onBack: () -> Unit, onLibrary: () -> Unit, onSh
                     fontSize = 11.sp, color = fg.copy(alpha = 0.55f), maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
+                // страницы всей книги: по числу страниц текущей главы и весу глав (оценка)
+                val curSize = current.chapters.getOrNull(chapter)?.size?.coerceAtLeast(1) ?: 1
+                val before = current.chapters.take(chapter).sumOf { it.size }
+                val bookPages = ((pages.toDouble() * current.total / curSize).roundToInt()).coerceAtLeast(pages)
+                val bookPage = ((before.toDouble() / curSize * pages).roundToInt() + page + 1).coerceIn(1, bookPages)
                 Text(
-                    "${page + 1}/$pages · ${(current.progress * 100).roundToInt()}%",
+                    "$bookPage из $bookPages · ${(current.progress * 100).roundToInt()}%",
                     fontSize = 11.sp, color = fg.copy(alpha = 0.55f),
                 )
             }
         }
 
         if (menu) {
-            // верхняя строка
-            Row(
-                Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).padding(4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад") }
-                Column(Modifier.weight(1f)) {
-                    Text(current.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (current.author.isNotEmpty()) {
-                        Text(current.author, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            Column(Modifier.fillMaxSize().background(bg)) {
+                // верхняя строка: книга
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад", tint = fg) }
+                    Column(Modifier.weight(1f)) {
+                        Text(current.title, style = MaterialTheme.typography.titleSmall, color = fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (current.author.isNotEmpty()) {
+                            Text(current.author, style = MaterialTheme.typography.bodySmall, color = fg.copy(alpha = 0.6f), maxLines = 1)
+                        }
+                    }
+                    current.linkedId?.let { lid ->
+                        TextButton(onClick = { onShelfBook(lid) }) { Text("О книге") }
                     }
                 }
-                current.linkedId?.let { lid ->
-                    TextButton(onClick = { onShelfBook(lid) }) { Text("О книге") }
+                // вместо текста — оглавление
+                val state = rememberLazyListState(initialFirstVisibleItemIndex = (chapter - 3).coerceAtLeast(0))
+                LazyColumn(state = state, modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    itemsIndexed(current.chapters) { i, c ->
+                        Text(
+                            c.title,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = if (i == chapter) FontWeight.Bold else FontWeight.Normal,
+                            color = if (i == chapter) Coral else fg,
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                menu = false; loadChapter(i, 0f)
+                            }.padding(horizontal = 20.dp, vertical = 12.dp),
+                        )
+                    }
                 }
-            }
-            // нижняя панель
-            Column(
-                Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surface).padding(horizontal = 16.dp, vertical = 8.dp),
-            ) {
+                // внизу: шестерёнка (шрифт и тема) и шкала прогресса с оранжевой палочкой
                 var seek by remember { mutableFloatStateOf(current.progress) }
                 var seeking by remember { mutableStateOf(false) }
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = { sheet = "font" }) {
+                        Icon(Icons.Filled.Settings, "Шрифт и тема", tint = Color(0xFF5A5766))
+                    }
                     Slider(
                         value = if (seeking) seek else current.progress,
                         onValueChange = { seeking = true; seek = it },
@@ -392,40 +436,20 @@ fun ReaderScreen(bookId: String, onBack: () -> Unit, onLibrary: () -> Unit, onSh
                                 acc += c.size
                             }
                             val frac = ((target - acc).toFloat() / b.chapters[idx].size).coerceIn(0f, 0.999f)
+                            menu = false
                             loadChapter(idx, frac)
                         },
-                        colors = SliderDefaults.colors(thumbColor = Violet, activeTrackColor = Violet),
+                        colors = SliderDefaults.colors(thumbColor = Coral, activeTrackColor = Violet),
                         modifier = Modifier.weight(1f),
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text("${((if (seeking) seek else current.progress) * 100).roundToInt()}%", style = MaterialTheme.typography.labelMedium)
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
-                    MenuButton("Оглавление") { sheet = "toc" }
-                    MenuButton("Шрифт и тема") { sheet = "font" }
-                    MenuButton("Библиотека") { onLibrary() }
+                    Text("${((if (seeking) seek else current.progress) * 100).roundToInt()}%", style = MaterialTheme.typography.labelMedium, color = fg)
                 }
             }
         }
     }
 
     when (sheet) {
-        "toc" -> ModalBottomSheet(onDismissRequest = { sheet = null }) {
-            val state = rememberLazyListState(initialFirstVisibleItemIndex = (chapter - 3).coerceAtLeast(0))
-            LazyColumn(state = state, modifier = Modifier.padding(bottom = 24.dp)) {
-                itemsIndexed(current.chapters) { i, c ->
-                    Text(
-                        c.title,
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = if (i == chapter) FontWeight.Bold else FontWeight.Normal,
-                        color = if (i == chapter) Violet else MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.fillMaxWidth().clickable {
-                            sheet = null; menu = false; loadChapter(i, 0f)
-                        }.padding(horizontal = 20.dp, vertical = 12.dp),
-                    )
-                }
-            }
-        }
         "font" -> ModalBottomSheet(onDismissRequest = { sheet = null }) {
             Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
                 Text("Размер шрифта", style = MaterialTheme.typography.titleSmall)
@@ -466,32 +490,33 @@ fun ReaderScreen(bookId: String, onBack: () -> Unit, onLibrary: () -> Unit, onSh
         }
     }
 
+    // дочитали: книга сама отмечается прочитанной, а мы об этом сообщаем
+    var markedId by remember(bookId) { mutableStateOf<String?>(null) }
+    LaunchedEffect(finishDialog) {
+        if (!finishDialog || current.finishAsked) return@LaunchedEffect
+        Library.update(bookId) { it.copy(finishAsked = true) }
+        markedId = withContext(Dispatchers.IO) { runCatching { Linker.markRead(current) }.getOrNull() }
+    }
     if (finishDialog) {
         AlertDialog(
-            onDismissRequest = { finishDialog = false; Library.update(bookId) { it.copy(finishAsked = true) } },
-            title = { Text("Книга дочитана") },
+            onDismissRequest = { finishDialog = false },
+            title = { Text("Книга прочитана") },
             text = {
                 Text(
-                    if (current.linkedId != null) "Отметить «${current.title}» прочитанной? На полке можно будет поставить оценку."
-                    else "Вы дошли до конца «${current.title}».",
+                    if (current.linkedId != null) "«${current.title}» добавлена на полку «Прочитал». Можно поставить оценку."
+                    else "Вы дочитали «${current.title}». Найти эту книгу на FantLab не удалось, поэтому на полку она не добавлена.",
                 )
             },
             confirmButton = {
-                if (current.linkedId != null) {
-                    Button(onClick = {
-                        finishDialog = false
-                        Library.update(bookId) { it.copy(finishAsked = true) }
-                        scope.launch {
-                            val id = withContext(Dispatchers.IO) { runCatching { Linker.markRead(current) }.getOrNull() }
-                            if (id != null) onShelfBook(id)
-                        }
-                    }) { Text("Прочитал") }
+                val lid = markedId ?: current.linkedId
+                if (lid != null) {
+                    Button(onClick = { finishDialog = false; onShelfBook(lid) }) { Text("Оценить") }
                 } else {
-                    TextButton(onClick = { finishDialog = false; Library.update(bookId) { it.copy(finishAsked = true) } }) { Text("Хорошо") }
+                    TextButton(onClick = { finishDialog = false }) { Text("Хорошо") }
                 }
             },
-            dismissButton = if (current.linkedId != null) {
-                { TextButton(onClick = { finishDialog = false; Library.update(bookId) { it.copy(finishAsked = true) } }) { Text("Не сейчас") } }
+            dismissButton = if (markedId != null || current.linkedId != null) {
+                { TextButton(onClick = { finishDialog = false }) { Text("Закрыть") } }
             } else null,
         )
     }
@@ -611,6 +636,84 @@ fun LibraryScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
             text = { Text("Файл «${b.title}» будет удалён с телефона. Книга на полке останется.") },
             confirmButton = { TextButton(onClick = { Library.remove(b.id); toDelete = null }) { Text("Удалить") } },
             dismissButton = { TextButton(onClick = { toDelete = null }) { Text("Отмена") } },
+        )
+    }
+}
+
+
+/** Кнопка «Добавить книгу (FB2, EPUB)»: выбор файла, импорт и сразу в читалку. */
+@Composable
+fun AddBookButton(onOpen: (String) -> Unit, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var importing by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            importing = true; error = null
+            try {
+                onOpen(BookImporter.import(context, uri).id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                error = e.message ?: "Не удалось открыть книгу"
+            } finally {
+                importing = false
+            }
+        }
+    }
+    Column(modifier) {
+        OutlinedButton(onClick = { pick.launch(arrayOf("*/*")) }, enabled = !importing, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Filled.Add, null)
+            Spacer(Modifier.width(8.dp))
+            Text(if (importing) "Открываю книгу…" else "Добавить книгу (FB2, EPUB)")
+        }
+        error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+    }
+}
+
+/** Книга-файл во «Читаю»: обложка, название, автор и сколько прочитано. Долгое нажатие — удалить файл. */
+@Composable
+fun FileBookRow(b: LibBook, shelfCover: ru.moistranicy.app.data.Book?, onOpen: () -> Unit) {
+    var ask by remember { mutableStateOf(false) }
+    Row(
+        Modifier.fillMaxWidth()
+            .combinedClickable(onClick = onOpen, onLongClick = { ask = true })
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(width = 60.dp, height = 88.dp).clip(RoundedCornerShape(6.dp)).background(Violet.copy(alpha = 0.18f)),
+            contentAlignment = Alignment.Center) {
+            when {
+                b.cover != null -> AsyncImage(File(Library.dirOf(b.id), b.cover), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                shelfCover != null -> BookCover(shelfCover, Modifier.fillMaxSize(), corner = 6.dp)
+                else -> Text(b.title.take(1).uppercase(), color = Violet, fontWeight = FontWeight.Bold)
+            }
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(b.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            val sub = listOfNotNull(b.series?.let { s -> "Цикл «$s»" + (b.seriesNo?.let { ", книга $it" } ?: "") }).joinToString()
+            if (sub.isNotEmpty()) Text(sub, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (b.author.isNotEmpty()) Text(b.author, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                LinearProgressIndicator(
+                    progress = { b.progress }, color = Violet,
+                    modifier = Modifier.weight(1f).height(4.dp).clip(RoundedCornerShape(2.dp)),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("${(b.progress * 100).roundToInt()}% · ${b.format}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+    if (ask) {
+        AlertDialog(
+            onDismissRequest = { ask = false },
+            title = { Text("Удалить файл книги?") },
+            text = { Text("Файл «${b.title}» будет удалён с телефона. Книга на полке и её статус останутся.") },
+            confirmButton = { TextButton(onClick = { Library.remove(b.id); ask = false }) { Text("Удалить") } },
+            dismissButton = { TextButton(onClick = { ask = false }) { Text("Отмена") } },
         )
     }
 }

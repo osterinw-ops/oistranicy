@@ -229,6 +229,7 @@ fun AppRoot(
     }
     /** Кнопка-логотип: последняя книга на месте остановки, без книг — библиотека. */
     fun openReader() {
+        ReaderUi.menu = false
         val last = ru.moistranicy.app.data.reader.Library.lastOpened()
             ?: ru.moistranicy.app.data.reader.Library.books.value.values.maxByOrNull { it.addedAt }
         nav.navigate(if (last != null) "reader/${last.id}" else "library") { launchSingleTop = true }
@@ -248,7 +249,7 @@ fun AppRoot(
     Scaffold(
         contentWindowInsets = NoInsets,
         bottomBar = {
-            if (!inReader) NavigationBar {
+            if (!inReader || ReaderUi.menu) NavigationBar {
                 tabs.forEachIndexed { ti, t ->
                     if (ti == 2) {
                         // по центру — логотип: открывает читалку там, где остановились
@@ -321,12 +322,38 @@ fun AppRoot(
                 total += dx
             }
         }
-        NavHost(nav, startDestination = "shelf", modifier = Modifier.padding(pad).then(swipeModifier)) {
+        // переход между главными разделами — сдвигом в сторону соседнего раздела;
+        // остальные экраны (книга, автор…) появляются плавным проявлением
+        fun tabIdx(r: String?) = tabs.indexOfFirst { it.route == r }
+        fun dir(from: String?, to: String?): Int {
+            val a = tabIdx(from); val b = tabIdx(to)
+            return if (a < 0 || b < 0 || a == b) 0 else if (b > a) 1 else -1
+        }
+        val slide = androidx.compose.animation.core.tween<androidx.compose.ui.unit.IntOffset>(260)
+        val fade = androidx.compose.animation.core.tween<Float>(200)
+        NavHost(
+            nav, startDestination = "shelf", modifier = Modifier.padding(pad).then(swipeModifier),
+            enterTransition = {
+                when (val d = dir(initialState.destination.route, targetState.destination.route)) {
+                    0 -> androidx.compose.animation.fadeIn(fade)
+                    else -> androidx.compose.animation.slideInHorizontally(slide) { w -> d * w }
+                }
+            },
+            exitTransition = {
+                when (val d = dir(initialState.destination.route, targetState.destination.route)) {
+                    0 -> androidx.compose.animation.fadeOut(fade)
+                    else -> androidx.compose.animation.slideOutHorizontally(slide) { w -> -d * w }
+                }
+            },
+            popEnterTransition = { androidx.compose.animation.fadeIn(fade) },
+            popExitTransition = { androidx.compose.animation.fadeOut(fade) },
+        ) {
             composable("shelf") {
                 ShelfScreen(
                     onBook = { nav.openBook(it) },
                     onAuthor = { nav.openAuthor(it) },
                     onSearch = { goTab("search"); currentTab = "search" },
+                    onRead = { nav.navigate("reader/$it") },
                 )
             }
             composable("library") {

@@ -166,10 +166,21 @@ fun BookScreen(
     // «отметить весь цикл прочитанным»: 1 — подтверждение, 2 — вопрос про книги других авторов
     var markAllStep by remember(id) { mutableIntStateOf(0) }
 
+    var confirmRemove by remember(id) { mutableStateOf(false) }
     fun removeFromShelf() {
         ShelfRepository.remove(id)
         CycleRepository.onBookRemoved(id)
     }
+    if (confirmRemove) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmRemove = false },
+            title = { Text("Убрать книгу с полки?") },
+            text = { Text("Статус, оценка и дата прочтения этой книги будут удалены. Саму книгу можно снова найти и добавить.") },
+            confirmButton = { TextButton(onClick = { confirmRemove = false; removeFromShelf() }) { Text("Убрать") } },
+            dismissButton = { TextButton(onClick = { confirmRemove = false }) { Text("Отмена") } },
+        )
+    }
+
 
     fun closeRating() {
         rateDialog = false
@@ -207,8 +218,8 @@ fun BookScreen(
                 },
                 actions = {
                     if (entry != null) {
-                        IconButton(onClick = { removeFromShelf() }) {
-                            Icon(Icons.Filled.Delete, "Убрать с полки")
+                        IconButton(onClick = { confirmRemove = true }) {
+                            Icon(Icons.Filled.Delete, "Убрать книгу с полки")
                         }
                     }
                 },
@@ -379,9 +390,16 @@ fun BookScreen(
             val isExcerpt = book.workType?.lowercase()?.contains("отрывок") == true || book.isCycle
             if (!isExcerpt) {
                 Spacer(Modifier.height(16.dp))
-                StatusButtons(entry?.status) { s ->
-                    // повторное нажатие на выбранный статус — отменить (с подтверждением)
-                    if (entry?.status == s) confirmUndo = s else onStatus(book, s)
+                // «Читаю» нельзя поставить вручную: кнопка появляется и горит, когда файл книги
+                // загружен в читалку; нажатие на неё открывает книгу
+                val withReading = file != null || entry?.status == ReadStatus.READING
+                StatusButtons(entry?.status, showReading = withReading) { s ->
+                    when {
+                        s == ReadStatus.READING && file != null -> onRead(file.id)
+                        // повторное нажатие на выбранный статус — отменить (с подтверждением)
+                        entry?.status == s -> confirmUndo = s
+                        else -> onStatus(book, s)
+                    }
                 }
             }
 
@@ -855,9 +873,9 @@ private fun utcDayToLocalNoon(utc: Long): Long {
  * Выбранная — фирменный фиолетовый градиент, остальные — спокойная подложка.
  */
 @Composable
-private fun StatusButtons(current: ReadStatus?, onClick: (ReadStatus) -> Unit) {
+private fun StatusButtons(current: ReadStatus?, showReading: Boolean = true, onClick: (ReadStatus) -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        ru.moistranicy.app.data.VISIBLE_STATUSES.forEach { s ->
+        ru.moistranicy.app.data.VISIBLE_STATUSES.filter { it != ReadStatus.READING || showReading }.forEach { s ->
             val selected = current == s
             Column(
                 Modifier

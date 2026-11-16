@@ -111,19 +111,51 @@ object Importer {
             else -> textRows(decode(bytes))
         }
         return rows.mapNotNull { cells ->
-            val c = cells.map { it.trim() }.filter { it.isNotEmpty() }
+            val c = cells.map { cleanCell(it) }.filter { it.isNotEmpty() }
             when {
                 c.isEmpty() -> null
-                c.size >= 2 -> ImportLine(c[0], c[1], c[0] + " — " + c[1])
-                else -> ImportLine(null, null, c[0])
+                c.size >= 2 -> line(c[0], c[1])
+                else -> {
+                    // «Автор — Название» одной строкой (тире, дефис с пробелами)
+                    val parts = c[0].split(Regex("\\s+[—–-]\\s+"), limit = 2)
+                    if (parts.size == 2 && parts[0].isNotBlank() && parts[1].isNotBlank()) line(parts[0], parts[1])
+                    else ImportLine(null, null, c[0])
+                }
             }
         }.filterNot { l -> isHeader(l) }.distinctBy { it.raw.lowercase() }
     }
 
+    /** Значки списков и номера перед текстом («• », «- », «12. », «3) ») не нужны. */
+    private fun cleanCell(s: String): String =
+        s.trim().trim('"').trim()
+            .replace(Regex("^[\\s•·*▪◦►‣#№>|]+"), "")
+            .replace(Regex("^\\d{1,4}[.)]\\s+"), "")
+            .trim()
+
+    /** Строка «автор + название»: номер перед названием и повтор автора в названии убираем. */
+    private fun line(author0: String, title0: String): ImportLine {
+        val author = cleanCell(author0)
+        var title = cleanCell(title0)
+        // «Круз Андрей. Ар-Деко», «Андрей Круз — Ар-Деко»: имя автора в начале названия — лишнее
+        val words = norm(author).split(' ').filter { it.length >= 2 }
+        if (words.isNotEmpty()) {
+            val t = title.split(Regex("\\s+")).toMutableList()
+            var cut = 0
+            while (cut < t.size && norm(t[cut]).let { w -> w.isNotEmpty() && w in words }) cut++
+            if (cut > 0 && cut < t.size) title = t.drop(cut).joinToString(" ").replace(Regex("^[\\s.:,;—–-]+"), "")
+        }
+        title = cleanCell(title)
+        return ImportLine(author, title, "$author — $title")
+    }
+
     private fun isHeader(l: ImportLine): Boolean {
         val a = l.author?.lowercase() ?: return false
-        return a.startsWith("автор") || a == "author"
+        val t = l.title?.lowercase().orEmpty()
+        return a.startsWith("автор") || a.startsWith("имя автора") || a == "author" || t.startsWith("название")
     }
+
+    /** Ненайденные книги одним текстом — для сохранения в файл. */
+    fun notFoundText(): String = "Не найдены на FantLab при импорте в «МоиСтраницы»:\n\n" + notFound.joinToString("\n")
 
     /** UTF-8, а если текст не похож на него — Windows-1251 (старые файлы из Блокнота/Excel). */
     private fun decode(bytes: ByteArray): String {
