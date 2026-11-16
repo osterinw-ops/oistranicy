@@ -56,14 +56,14 @@ adb shell am start -W -a android.intent.action.VIEW -t application/x-fictionbook
 sleep 8; adb exec-out screencap -p > "$OUT/10-reader-fb2.png"
 adb shell input tap $((W*85/100)) $((H/2)); sleep 2; adb exec-out screencap -p > "$OUT/11-reader-page2.png"
 adb shell input swipe $((W*80/100)) $((H/2)) $((W*20/100)) $((H/2)) 200; sleep 2
-adb shell input tap $((W/2)) $((H/2)); sleep 2; adb exec-out screencap -p > "$OUT/12-reader-menu.png"
+adb shell input swipe $((W/2)) $((H/2)) $((W/2)) $((H/2)) 900; sleep 2; adb exec-out screencap -p > "$OUT/12-reader-menu.png"
 adb shell input keyevent 4; sleep 2
 adb shell am start -W -a android.intent.action.VIEW -t application/epub+zip \
   -d file:///data/data/$PKG/files/test.epub -n $PKG/.ui.MainActivity
 sleep 10; adb exec-out screencap -p > "$OUT/13-reader-epub.png"
 adb shell input tap $((W*85/100)) $((H/2)); sleep 2; adb exec-out screencap -p > "$OUT/13b-reader-epub-p2.png"
 adb shell input keyevent 4; sleep 2
-shot 14-library route:library 6
+shot 14-shelf-reading-files shelf:READING 6
 shot 15-profile tab:profile 6
 adb logcat -d | grep -iE "AndroidRuntime|FATAL|MoiReader|chromium" | tail -80 > "$OUT/logcat.txt" || true
 ls -la "$OUT"
