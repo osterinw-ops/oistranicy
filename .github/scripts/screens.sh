@@ -65,5 +65,6 @@ adb shell input tap $((W*85/100)) $((H/2)); sleep 2; adb exec-out screencap -p >
 adb shell input keyevent 4; sleep 2
 shot 14-shelf-reading-files shelf:READING 6
 shot 15-profile tab:profile 6
+shot 16-opds route:opds 5
 adb logcat -d | grep -iE "AndroidRuntime|FATAL|MoiReader|chromium" | tail -80 > "$OUT/logcat.txt" || true
 ls -la "$OUT"
