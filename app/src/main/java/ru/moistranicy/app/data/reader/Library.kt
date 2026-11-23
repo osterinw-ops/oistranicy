@@ -32,6 +32,8 @@ data class LibBook(
     val openedAt: Long = 0,
     /** Предлагали ли уже отметить книгу прочитанной. */
     val finishAsked: Boolean = false,
+    /** Отмечена прочитанной — уходит из «Читаю». */
+    val finished: Boolean = false,
 ) {
     val total: Long get() = chapters.sumOf { it.size }.coerceAtLeast(1)
 }
@@ -60,6 +62,24 @@ object Library {
 
     /** Файл, связанный с книгой полки. */
     fun byLinked(bookId: String): LibBook? = _books.value.values.firstOrNull { it.linkedId == bookId }
+
+    /** Тот же файл уже загружен (то же название, автор и объём) — повторно не копируем. */
+    fun sameAs(b: LibBook): LibBook? = _books.value.values.firstOrNull {
+        it.id != b.id && it.title == b.title && it.author == b.author && it.format == b.format && it.total == b.total
+    }
+
+    /** Книги-файлы во «Читаю»: всё, что не отмечено прочитанным. */
+    fun reading(shelf: Map<String, ru.moistranicy.app.data.ShelfEntry>): List<LibBook> = _books.value.values.filter { b ->
+        // раньше отметки «прочитана» у файла не было: дочитанная и отмеченная на полке книга — тоже прочитана
+        !b.finished && !(b.finishAsked && b.linkedId?.let { shelf[it]?.status } == ru.moistranicy.app.data.ReadStatus.READ)
+    }
+
+    /** Сколько книг во «Читаю»: файлы плюс книги со статусом «Читаю» без файла. */
+    fun readingCount(shelf: Map<String, ru.moistranicy.app.data.ShelfEntry>): Int {
+        val files = reading(shelf)
+        val linked = _books.value.values.mapNotNull { it.linkedId }.toSet()
+        return files.size + shelf.values.count { it.status == ru.moistranicy.app.data.ReadStatus.READING && it.book.id !in linked }
+    }
 
     @Synchronized
     fun put(b: LibBook) = save(_books.value + (b.id to b))
@@ -109,7 +129,7 @@ object Library {
         })
         putOpt("cover", b.cover); putOpt("linkedId", b.linkedId)
         put("chapter", b.chapter); put("frac", b.frac.toDouble()); put("progress", b.progress.toDouble())
-        put("addedAt", b.addedAt); put("openedAt", b.openedAt); put("finishAsked", b.finishAsked)
+        put("addedAt", b.addedAt); put("openedAt", b.openedAt); put("finishAsked", b.finishAsked); put("finished", b.finished)
     }
 
     private fun JSONObject.strOrNull(k: String) = if (has(k) && !isNull(k)) getString(k) else null
@@ -135,6 +155,7 @@ object Library {
             addedAt = o.optLong("addedAt"),
             openedAt = o.optLong("openedAt"),
             finishAsked = o.optBoolean("finishAsked", false),
+            finished = o.optBoolean("finished", false),
         )
     }
 }

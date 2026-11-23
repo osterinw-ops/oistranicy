@@ -42,6 +42,12 @@ object BookImporter {
                 }
             } else Fb2.convert(id, dir, src, name)
             src.delete()
+            // тот же файл открыли ещё раз — продолжаем читать уже загруженную книгу
+            val old = Library.sameAs(book)
+            if (old != null) {
+                dir.deleteRecursively()
+                return@withContext old
+            }
             Library.put(book)
             book
         } catch (e: Exception) {

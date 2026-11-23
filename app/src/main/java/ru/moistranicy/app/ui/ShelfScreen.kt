@@ -343,11 +343,12 @@ fun ShelfScreen(
     onAuthor: (String) -> Unit = {},
     onSearch: () -> Unit = {},
     onRead: (String) -> Unit = {},
+    onOpds: () -> Unit = {},
 ) {
     val shelf by ShelfRepository.entries.collectAsState()
     // книги-файлы читалки живут во «Читаю» (бывшая «Библиотека»)
     val library by ru.moistranicy.app.data.reader.Library.books.collectAsState()
-    val files = library.values.sortedWith(
+    val files = remember(library, shelf) { ru.moistranicy.app.data.reader.Library.reading(shelf) }.sortedWith(
         compareByDescending<ru.moistranicy.app.data.reader.LibBook> { it.openedAt }.thenByDescending { it.addedAt },
     )
     val cycles by CycleRepository.cycles.collectAsState()
@@ -365,7 +366,7 @@ fun ShelfScreen(
     // «Читаю» — отдельными книгами, без группировки по циклам
     val reading = shelf.values.filter { it.status == ReadStatus.READING }.sortedByDescending { it.updatedAt }
     // вкладка «Читаю» видна, только если есть книги с этим статусом
-    val readingNoFile = reading.filter { e -> files.none { it.linkedId == e.book.id } }
+    val readingNoFile = reading.filter { e -> library.values.none { it.linkedId == e.book.id } }
     val statuses = ru.moistranicy.app.data.VISIBLE_STATUSES.filter { it != ReadStatus.READING || reading.isNotEmpty() || files.isNotEmpty() }
     val groupsByStatus = statuses.associateWith { buildGroups(it, shelf, cycles, ShelfUi.readSort) }
     val selected = ReadStatus.entries.getOrElse(ShelfUi.tab) { ReadStatus.WANT }
@@ -412,9 +413,17 @@ fun ShelfScreen(
                 LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(vertical = 6.dp)) {
                     item(key = "add-book") {
                         AddBookButton(onOpen = onRead, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                        androidx.compose.material3.TextButton(onClick = onOpds, modifier = Modifier.padding(horizontal = 8.dp)) {
+                            Text("Открыть OPDS-каталог")
+                        }
                     }
                     items(files, key = { "f:" + it.id }) { b ->
-                        FileBookRow(b, b.linkedId?.let { shelf[it]?.book }) { onRead(b.id) }
+                        FileBookRow(
+                            b, b.linkedId?.let { shelf[it]?.book },
+                            onOpen = { onRead(b.id) },
+                            onCycle = { onBook(it) },
+                            onAuthor = { onAuthor(it) },
+                        )
                     }
                     items(readingNoFile, key = { it.book.id }) { e -> ReadingRow(e, cycles) { onBook(e.book.id) } }
                     if (files.isNotEmpty()) item(key = "files-hint") {

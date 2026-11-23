@@ -392,8 +392,10 @@ fun BookScreen(
                 Spacer(Modifier.height(16.dp))
                 // «Читаю» нельзя поставить вручную: кнопка появляется и горит, когда файл книги
                 // загружен в читалку; нажатие на неё открывает книгу
-                val withReading = file != null || entry?.status == ReadStatus.READING
-                StatusButtons(entry?.status, showReading = withReading) { s ->
+                // прочитанная книга: «Читаю» и «Хочу прочитать» убираем — остаётся «Прочитал» (повторное нажатие отменяет)
+                val isRead = entry?.status == ReadStatus.READ
+                val withReading = !isRead && (file != null || entry?.status == ReadStatus.READING)
+                StatusButtons(entry?.status, showReading = withReading, showWant = !isRead) { s ->
                     when {
                         s == ReadStatus.READING && file != null -> onRead(file.id)
                         // повторное нажатие на выбранный статус — отменить (с подтверждением)
@@ -469,8 +471,9 @@ fun BookScreen(
                         style = MaterialTheme.typography.titleSmall,
                         modifier = Modifier.weight(1f),
                     )
-                    // отметить все книги цикла прочитанными (с подтверждением)
-                    IconButton(onClick = { markAllStep = 1 }) {
+                    // отметить все книги цикла прочитанными (с подтверждением); всё прочитано — значка нет
+                    val anyUnread = cycleBooks(children).any { it.published && shelf[it.book.id]?.status != ReadStatus.READ }
+                    if (anyUnread) IconButton(onClick = { markAllStep = 1 }) {
                         Icon(
                             painterResource(R.drawable.ic_star_border),
                             "Отметить все книги цикла прочитанными",
@@ -873,9 +876,10 @@ private fun utcDayToLocalNoon(utc: Long): Long {
  * Выбранная — фирменный фиолетовый градиент, остальные — спокойная подложка.
  */
 @Composable
-private fun StatusButtons(current: ReadStatus?, showReading: Boolean = true, onClick: (ReadStatus) -> Unit) {
+private fun StatusButtons(current: ReadStatus?, showReading: Boolean = true, showWant: Boolean = true, onClick: (ReadStatus) -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        ru.moistranicy.app.data.VISIBLE_STATUSES.filter { it != ReadStatus.READING || showReading }.forEach { s ->
+        ru.moistranicy.app.data.VISIBLE_STATUSES
+            .filter { (it != ReadStatus.READING || showReading) && (it != ReadStatus.WANT || showWant) }.forEach { s ->
             val selected = current == s
             Column(
                 Modifier

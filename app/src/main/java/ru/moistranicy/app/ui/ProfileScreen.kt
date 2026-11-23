@@ -66,9 +66,13 @@ fun ProfileScreen(
     onPeople: () -> Unit = {},
     onShelf: (ReadStatus) -> Unit = {},
     onAuthor: (String) -> Unit = {},
+    onOpds: () -> Unit = {},
 ) {
     val shelf by ShelfRepository.entries.collectAsState()
     val all = shelf.values
+    // «Читаю» считаем так же, как на полке: вместе с книгами-файлами читалки
+    val libraryState by ru.moistranicy.app.data.reader.Library.books.collectAsState()
+    val readingCount = remember(shelf, libraryState) { ru.moistranicy.app.data.reader.Library.readingCount(shelf) }
     val year = Calendar.getInstance().get(Calendar.YEAR)
     val readThisYear = all.count { e ->
         e.status == ReadStatus.READ && e.finishedAt?.let { yearOf(it) == year } == true
@@ -95,7 +99,7 @@ fun ProfileScreen(
             // Счётчики по статусам
             // плашки статусов ведут в соответствующий раздел полки
             val tiles = ru.moistranicy.app.data.VISIBLE_STATUSES.map { s ->
-                Triple<String, String, (() -> Unit)?>(s.title, all.count { it.status == s }.toString()) { onShelf(s) }
+                Triple<String, String, (() -> Unit)?>(s.title, (if (s == ReadStatus.READING) readingCount else all.count { it.status == s }).toString()) { onShelf(s) }
             } + listOf(
                 Triple<String, String, (() -> Unit)?>("Всего на полке", all.size.toString(), null),
                 Triple<String, String, (() -> Unit)?>("Средняя оценка", avg?.let { String.format(Locale("ru"), "%.1f", it) } ?: "—", null),
@@ -213,6 +217,7 @@ private fun SettingsCard() {
         )
         Spacer(Modifier.height(10.dp))
         ImportButton()
+        androidx.compose.material3.OutlinedButton(onClick = onOpds) { Text("OPDS-каталоги: скачать книги в читалку") }
         Spacer(Modifier.height(8.dp))
         Text(
             "Данные о книгах: FantLab (fantlab.ru) и Google Книги. Полка хранится только на этом телефоне.",

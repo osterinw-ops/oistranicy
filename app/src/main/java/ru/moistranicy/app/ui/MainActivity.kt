@@ -2,6 +2,19 @@
 
 package ru.moistranicy.app.ui
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import android.Manifest
@@ -98,6 +111,7 @@ class MainActivity : ComponentActivity() {
         CycleRepository.init(applicationContext)
         ru.moistranicy.app.data.LangCache.init(applicationContext)
         ru.moistranicy.app.data.reader.Library.init(applicationContext)
+        ru.moistranicy.app.data.reader.Opds.init(applicationContext)
         ru.moistranicy.app.data.reader.ReaderPrefs.init(applicationContext)
         AuthorStats.init(applicationContext)
         KnownAuthors.init(applicationContext)
@@ -141,10 +155,10 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private data class Tab(val route: String, val label: String, val icon: ImageVector)
+private data class Tab(val route: String, val label: String, val icon: ImageVector?, val res: Int? = null)
 
 private val tabs = listOf(
-    Tab("shelf", "Полка", Icons.Filled.Home),
+    Tab("shelf", "Полка", null, ru.moistranicy.app.R.drawable.ic_bookshelf),
     Tab("recs", "Рекомендации", Icons.Filled.ThumbUp),
     Tab("search", "Поиск", Icons.Filled.Search),
     Tab("profile", "Профиль", Icons.Filled.Person),
@@ -249,55 +263,32 @@ fun AppRoot(
     Scaffold(
         contentWindowInsets = NoInsets,
         bottomBar = {
-            if (!inReader || ReaderUi.menu) NavigationBar {
-                tabs.forEachIndexed { ti, t ->
-                    if (ti == 2) {
-                        // по центру — логотип: открывает читалку там, где остановились
-                        NavigationBarItem(
-                            selected = false,
-                            onClick = { openReader() },
-                            icon = { ReaderLogoButton() },
-                            label = null,
-                            alwaysShowLabel = false,
-                        )
+            if (!inReader || ReaderUi.menu) {
+                fun onTab(t: Tab) {
+                    if (currentTab == t.route) {
+                        // повторное нажатие: сбросить вкладку к начальной странице
+                        when (t.route) {
+                            "search" -> resetSearch()
+                            "shelf" -> ShelfUi.reset()
+                            "recs" -> resetRecsFilters()
+                        }
+                        TabReset.bump(t.route)
+                        nav.navigate(t.route) {
+                            popUpTo(nav.graph.findStartDestination().id) { saveState = false }
+                            launchSingleTop = true
+                            restoreState = false
+                        }
+                    } else {
+                        goTab(t.route)
                     }
-                    NavigationBarItem(
-                        selected = route == t.route,
-                        onClick = {
-                            if (currentTab == t.route) {
-                                // повторное нажатие: сбросить вкладку к начальной странице
-                                when (t.route) {
-                                    "search" -> resetSearch()
-                                    "shelf" -> ShelfUi.reset()
-                                    "recs" -> resetRecsFilters()
-                                }
-                                TabReset.bump(t.route)
-                                nav.navigate(t.route) {
-                                    popUpTo(nav.graph.findStartDestination().id) { saveState = false }
-                                    launchSingleTop = true
-                                    restoreState = false
-                                }
-                            } else {
-                                goTab(t.route)
-                            }
-                            currentTab = t.route
-                        },
-                        icon = {
-                            if (t.route == "shelf" && newCount > 0) {
-                                BadgedBox(badge = { Badge { Text("$newCount") } }) { Icon(t.icon, contentDescription = null) }
-                            } else {
-                                Icon(t.icon, contentDescription = null)
-                            }
-                        },
-                        label = {
-                            // длинное «Рекомендации» не обрезаем: подпись может чуть выходить за свою ячейку
-                            Text(
-                                t.label, fontSize = 10.sp, letterSpacing = (-0.2).sp, maxLines = 1, softWrap = false,
-                                modifier = Modifier.wrapContentWidth(unbounded = true),
-                            )
-                        },
-                    )
+                    currentTab = t.route
                 }
+                FloatingTabBar(
+                    selected = route,
+                    newCount = newCount,
+                    onTab = ::onTab,
+                    onReader = { openReader() },
+                )
             }
         },
     ) { pad ->
@@ -354,7 +345,11 @@ fun AppRoot(
                     onAuthor = { nav.openAuthor(it) },
                     onSearch = { goTab("search"); currentTab = "search" },
                     onRead = { nav.navigate("reader/$it") },
+                    onOpds = { nav.navigate("opds") },
                 )
+            }
+            composable("opds") {
+                OpdsScreen(onBack = { nav.popBackStack() }, onOpenBook = { id -> nav.navigate("reader/$id") })
             }
             composable("library") {
                 LibraryScreen(
@@ -406,6 +401,7 @@ fun AppRoot(
                     onUser = { nav.openUser(it) },
                     onPeople = { nav.navigate("people") },
                     onAuthor = { nav.openAuthor(it) },
+                    onOpds = { nav.navigate("opds") },
                     onShelf = { st ->
                         ShelfUi.tab = st.ordinal
                         goTab("shelf")
@@ -435,23 +431,75 @@ fun AppRoot(
 }
 
 
-/** Кнопка-логотип в нижнем меню: цветной логотип в круге цвета панели, крупнее соседних значков. */
+/**
+ * Нижняя панель-«капсула»: висит над экраном со скруглёнными краями, без подписей.
+ * По центру — круг с логотипом, выступающий над капсулой: открывает читалку.
+ */
 @Composable
-private fun ReaderLogoButton() {
+private fun FloatingTabBar(selected: String?, newCount: Int, onTab: (Tab) -> Unit, onReader: () -> Unit) {
+    val dark = isAppDark()
+    val barColor = if (dark) Color(0xFF242130) else Color.White
+    val border = if (dark) Color(0x22FFFFFF) else Color(0x14000000)
+    val pill = androidx.compose.foundation.shape.RoundedCornerShape(50)
     Box(
-        Modifier.size(56.dp).clip(androidx.compose.foundation.shape.CircleShape)
-            .background(androidx.compose.material3.NavigationBarDefaults.containerColor),
+        Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp).padding(bottom = 8.dp).height(74.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Box(Modifier.size(44.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))) {
-            androidx.compose.foundation.Image(
-                androidx.compose.ui.res.painterResource(ru.moistranicy.app.R.drawable.ic_launcher_background), "Читалка",
-                modifier = Modifier.matchParentSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-            )
-            androidx.compose.foundation.Image(
-                androidx.compose.ui.res.painterResource(ru.moistranicy.app.R.drawable.ic_launcher_foreground), null,
-                modifier = Modifier.matchParentSize().scale(1.35f), contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-            )
+        Row(
+            Modifier.fillMaxWidth().height(58.dp)
+                .shadow(10.dp, pill, ambientColor = Color(0x40000000), spotColor = Color(0x40000000))
+                .clip(pill).background(barColor)
+                .border(1.dp, border, pill)
+                .padding(horizontal = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            tabs.forEachIndexed { i, t ->
+                if (i == 2) Spacer(Modifier.width(76.dp))
+                val on = selected == t.route
+                Box(
+                    Modifier.weight(1f).fillMaxHeight()
+                        .clickable(
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            indication = null,
+                        ) { onTab(t) }
+                        .semantics { contentDescription = t.label },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        Modifier.size(width = 52.dp, height = 38.dp).clip(pill)
+                            .background(if (on) Violet.copy(alpha = if (dark) 0.30f else 0.14f) else Color.Transparent),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        val tint = if (on) Violet else MaterialTheme.colorScheme.onSurfaceVariant
+                        val icon: @Composable () -> Unit = {
+                            if (t.res != null) Icon(androidx.compose.ui.res.painterResource(t.res), null, tint = tint, modifier = Modifier.size(25.dp))
+                            else Icon(t.icon!!, null, tint = tint, modifier = Modifier.size(25.dp))
+                        }
+                        if (t.route == "shelf" && newCount > 0) BadgedBox(badge = { Badge { Text("$newCount") } }) { icon() } else icon()
+                    }
+                }
+            }
+        }
+        // круг с логотипом, выступающий над капсулой
+        Box(
+            Modifier.size(74.dp)
+                .shadow(10.dp, androidx.compose.foundation.shape.CircleShape, ambientColor = Color(0x40000000), spotColor = Color(0x40000000))
+                .clip(androidx.compose.foundation.shape.CircleShape).background(barColor)
+                .border(1.dp, border, androidx.compose.foundation.shape.CircleShape)
+                .clickable(onClick = onReader)
+                .semantics { contentDescription = "Читалка" },
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(Modifier.size(52.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(15.dp))) {
+                androidx.compose.foundation.Image(
+                    androidx.compose.ui.res.painterResource(ru.moistranicy.app.R.drawable.ic_launcher_background), null,
+                    modifier = Modifier.matchParentSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                )
+                androidx.compose.foundation.Image(
+                    androidx.compose.ui.res.painterResource(ru.moistranicy.app.R.drawable.ic_launcher_foreground), null,
+                    modifier = Modifier.matchParentSize().scale(1.35f), contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                )
+            }
         }
     }
 }

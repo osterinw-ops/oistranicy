@@ -24,9 +24,39 @@ object Linker {
         return null
     }
 
+    /** Книга файла, которой нет на FantLab: живёт на полке под своим id «file-…». */
+    fun localBook(b: LibBook): Book = Book(
+        id = "file-" + b.id,
+        title = b.title,
+        authors = b.author.split(',').map { it.trim() }.filter { it.isNotEmpty() }.map { ru.moistranicy.app.data.Person(null, it) },
+        coverUrl = b.cover?.let { java.io.File(Library.dirOf(b.id), it).toURI().toString() },
+        annotation = "",
+        genres = emptyList(),
+        year = null,
+        language = null,
+        seriesId = null,
+        seriesName = b.series,
+        seriesNumber = b.seriesNo,
+        workType = "роман",
+    )
+
+    /** id книги на полке: найденной на FantLab, а если её там нет — своей, из файла. */
+    private suspend fun linkOf(b: LibBook): Pair<String, Book?> {
+        b.linkedId?.let { return it to null }
+        val found = find(b)
+        val book = found ?: localBook(b)
+        Library.update(b.id) { it.copy(linkedId = book.id) }
+        return book.id to book
+    }
+
     /** При открытии: связать (если ещё нет) и поставить «Читаю», если книга не прочитана. */
     suspend fun onOpen(b: LibBook) {
-        val id = b.linkedId ?: find(b)?.also { found -> Library.update(b.id) { it.copy(linkedId = found.id) } }?.id ?: return
+        val (id, fresh) = linkOf(b)
+        if (id.startsWith("file-")) {
+            val st = ShelfRepository.get(id)?.status
+            if (st == null) ShelfRepository.setStatus(fresh ?: localBook(b), ReadStatus.READING)
+            return
+        }
         // файл книги уже есть — значит, она вышла, даже если на FantLab «ожидается»
         ru.moistranicy.app.data.CycleRepository.markPublished(id)
         val st = ShelfRepository.get(id)?.status
@@ -37,9 +67,12 @@ object Linker {
 
     /** Дочитали: «Прочитал». Возвращает id книги на полке. */
     suspend fun markRead(b: LibBook): String? {
-        val id = b.linkedId ?: return null
-        val book = ShelfRepository.get(id)?.book ?: runCatching { FantLab.work(id).book }.getOrNull() ?: return null
+        val (id, fresh) = linkOf(b)
+        val book = ShelfRepository.get(id)?.book ?: fresh
+            ?: (if (id.startsWith("file-")) localBook(b) else runCatching { FantLab.work(id).book }.getOrNull())
+            ?: return null
         ShelfRepository.setStatus(book, ReadStatus.READ)
+        Library.update(b.id) { it.copy(finished = true) }
         return id
     }
 }

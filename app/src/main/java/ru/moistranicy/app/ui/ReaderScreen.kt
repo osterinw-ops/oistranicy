@@ -109,7 +109,7 @@ object ReaderUi {
 /** Цвета тем читалки: фон и текст. */
 private val READER_THEMES = listOf(
     "Светлая" to (Color(0xFFFFFFFF) to Color(0xFF1B1B1F)),
-    "Сепия" to (Color(0xFFF4ECD8) to Color(0xFF5B4636)),
+    "Сепия" to (Color(0xFFE4CFA2) to Color(0xFF3A2816)),
     "Тёмная" to (Color(0xFF121212) to Color(0xFFD6D2E0)),
 )
 
@@ -120,12 +120,21 @@ private fun readerCss(w: Int, h: Int): String {
     val (bg, fg) = READER_THEMES[ReaderPrefs.theme].second
     val m = ReaderPrefs.margin
     // сепия — с лёгкой фактурой бумаги (шум SVG), чтобы глазам было мягче
-    val paper = if (ReaderPrefs.theme == 1)
-        "background-image:url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'>" +
-            "<filter id='p'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/>" +
-            "<feColorMatrix values='0 0 0 0 0.42 0 0 0 0 0.33 0 0 0 0 0.2 0 0 0 0.09 0'/></filter>" +
-            "<rect width='100%' height='100%' filter='url(%23p)'/></svg>\")!important;background-attachment:fixed!important;"
-    else ""
+    // сепия — старая бумага: пятнистые разводы, мелкое зерно и затемнённые края страницы
+    val paper = if (ReaderPrefs.theme == 1) {
+        val stains = "<svg xmlns='http://www.w3.org/2000/svg' width='$w' height='$h'>" +
+            "<filter id='s'><feTurbulence type='fractalNoise' baseFrequency='0.008 0.012' numOctaves='4' seed='7'/>" +
+            "<feColorMatrix values='0 0 0 0 0.45 0 0 0 0 0.30 0 0 0 0 0.12 0 0 0 0.55 -0.12'/></filter>" +
+            "<rect width='100%' height='100%' filter='url(%23s)'/></svg>"
+        val grain = "<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'>" +
+            "<filter id='g'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/>" +
+            "<feColorMatrix values='0 0 0 0 0.35 0 0 0 0 0.25 0 0 0 0 0.12 0 0 0 0.10 0'/></filter>" +
+            "<rect width='100%' height='100%' filter='url(%23g)'/></svg>"
+        "background-image:radial-gradient(ellipse at center, rgba(255,240,200,0.35) 0%, rgba(255,240,200,0) 45%, rgba(110,70,25,0.28) 100%)," +
+            "url(\"data:image/svg+xml;utf8,$stains\"),url(\"data:image/svg+xml;utf8,$grain\")!important;" +
+            "background-size:${w}px ${h}px,${w}px ${h}px,180px 180px!important;background-repeat:no-repeat,no-repeat,repeat!important;" +
+            "background-attachment:fixed!important;"
+    } else ""
     val font = if (ReaderPrefs.serif) "'Noto Serif', Georgia, serif" else "Roboto, 'Noto Sans', sans-serif"
     return """
 html{width:${w}px!important;height:${h}px!important;overflow:hidden!important;margin:0!important;padding:0!important;background-color:${hex(bg)}!important;$paper}
@@ -418,7 +427,7 @@ fun ReaderScreen(bookId: String, onBack: () -> Unit, onLibrary: () -> Unit, onSh
                     Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp, bottom = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    IconButton(onClick = { sheet = "font" }) {
+                    IconButton(onClick = { menu = false; sheet = "font" }) {
                         Icon(Icons.Filled.Settings, "Шрифт и тема", tint = Color(0xFF5A5766))
                     }
                     Slider(
@@ -450,8 +459,13 @@ fun ReaderScreen(bookId: String, onBack: () -> Unit, onLibrary: () -> Unit, onSh
     }
 
     when (sheet) {
-        "font" -> ModalBottomSheet(onDismissRequest = { sheet = null }) {
+        // настройки поверх текста: видно, как меняется страница; «Назад» — сразу к чтению
+        "font" -> ModalBottomSheet(onDismissRequest = { sheet = null; menu = false }) {
             Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { sheet = null; menu = false }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "К чтению") }
+                    Text("Настройки чтения", style = MaterialTheme.typography.titleMedium)
+                }
                 Text("Размер шрифта", style = MaterialTheme.typography.titleSmall)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedButton(onClick = { ReaderPrefs.set(fontSize = ReaderPrefs.fontSize - 1) }) { Text("А−") }
@@ -490,34 +504,41 @@ fun ReaderScreen(bookId: String, onBack: () -> Unit, onLibrary: () -> Unit, onSh
         }
     }
 
-    // дочитали: книга сама отмечается прочитанной, а мы об этом сообщаем
+    // дочитали: спрашиваем, отметить ли книгу прочитанной; да — «Прочитал» и предложение оценить
     var markedId by remember(bookId) { mutableStateOf<String?>(null) }
+    var marking by remember(bookId) { mutableStateOf(false) }
     LaunchedEffect(finishDialog) {
-        if (!finishDialog || current.finishAsked) return@LaunchedEffect
-        Library.update(bookId) { it.copy(finishAsked = true) }
-        markedId = withContext(Dispatchers.IO) { runCatching { Linker.markRead(current) }.getOrNull() }
+        if (finishDialog && !current.finishAsked) Library.update(bookId) { it.copy(finishAsked = true) }
     }
+    val finishScope = rememberCoroutineScope()
     if (finishDialog) {
+        val done = markedId
         AlertDialog(
             onDismissRequest = { finishDialog = false },
-            title = { Text("Книга прочитана") },
+            title = { Text(if (done == null) "Книга дочитана" else "Книга прочитана") },
             text = {
                 Text(
-                    if (current.linkedId != null) "«${current.title}» добавлена на полку «Прочитал». Можно поставить оценку."
-                    else "Вы дочитали «${current.title}». Найти эту книгу на FantLab не удалось, поэтому на полку она не добавлена.",
+                    if (done == null) "Отметить «${current.title}» как прочитанную? Она переместится из «Читаю» в «Прочитал»."
+                    else "«${current.title}» на полке «Прочитал». Можно поставить оценку.",
                 )
             },
             confirmButton = {
-                val lid = markedId ?: current.linkedId
-                if (lid != null) {
-                    Button(onClick = { finishDialog = false; onShelfBook(lid) }) { Text("Оценить") }
+                if (done == null) {
+                    Button(enabled = !marking, onClick = {
+                        marking = true
+                        finishScope.launch {
+                            markedId = withContext(Dispatchers.IO) { runCatching { Linker.markRead(current) }.getOrNull() }
+                            marking = false
+                            if (markedId == null) finishDialog = false
+                        }
+                    }) { Text(if (marking) "Отмечаю…" else "Да, прочитана") }
                 } else {
-                    TextButton(onClick = { finishDialog = false }) { Text("Хорошо") }
+                    Button(onClick = { finishDialog = false; onShelfBook(done) }) { Text("Оценить") }
                 }
             },
-            dismissButton = if (markedId != null || current.linkedId != null) {
-                { TextButton(onClick = { finishDialog = false }) { Text("Закрыть") } }
-            } else null,
+            dismissButton = {
+                TextButton(onClick = { finishDialog = false }) { Text(if (done == null) "Нет" else "Закрыть") }
+            },
         )
     }
 }
@@ -674,7 +695,13 @@ fun AddBookButton(onOpen: (String) -> Unit, modifier: Modifier = Modifier) {
 
 /** Книга-файл во «Читаю»: обложка, название, автор и сколько прочитано. Долгое нажатие — удалить файл. */
 @Composable
-fun FileBookRow(b: LibBook, shelfCover: ru.moistranicy.app.data.Book?, onOpen: () -> Unit) {
+fun FileBookRow(
+    b: LibBook,
+    shelfCover: ru.moistranicy.app.data.Book?,
+    onOpen: () -> Unit,
+    onCycle: ((String) -> Unit)? = null,
+    onAuthor: ((String) -> Unit)? = null,
+) {
     var ask by remember { mutableStateOf(false) }
     Row(
         Modifier.fillMaxWidth()
@@ -693,9 +720,22 @@ fun FileBookRow(b: LibBook, shelfCover: ru.moistranicy.app.data.Book?, onOpen: (
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(b.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            val sub = listOfNotNull(b.series?.let { s -> "Цикл «$s»" + (b.seriesNo?.let { ", книга $it" } ?: "") }).joinToString()
-            if (sub.isNotEmpty()) Text(sub, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (b.author.isNotEmpty()) Text(b.author, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            // цикл и автор — ссылки: на страницу цикла и автора (если книга найдена на FantLab)
+            val seriesName = shelfCover?.seriesName ?: b.series
+            val seriesNo = shelfCover?.seriesNumber ?: b.seriesNo
+            val cycleId = shelfCover?.seriesId
+            if (seriesName != null) Text(
+                "Цикл «$seriesName»" + (seriesNo?.let { ", книга $it" } ?: ""),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = if (cycleId != null && onCycle != null) Modifier.clickable { onCycle(cycleId) } else Modifier,
+            )
+            val author = shelfCover?.authors?.firstOrNull { it.id != null }
+            val authorLine = shelfCover?.authorsLine?.takeIf { it.isNotEmpty() } ?: b.author
+            if (authorLine.isNotEmpty()) Text(
+                authorLine, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
+                modifier = if (author?.id != null && onAuthor != null) Modifier.clickable { onAuthor(author.id!!) } else Modifier,
+            )
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 LinearProgressIndicator(
