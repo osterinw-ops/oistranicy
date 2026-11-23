@@ -129,14 +129,14 @@ fun ProfileScreen(
             Text("Любимые авторы", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 4.dp))
             AuthorsCloudCard(onAuthor = onAuthor, modifier = Modifier.fillMaxWidth().height(380.dp))
 
-            SettingsCard()
+            SettingsCard(onOpds = onOpds)
             Spacer(Modifier.height(16.dp))
         }
     }
 }
 
 @Composable
-private fun SettingsCard() {
+private fun SettingsCard(onOpds: () -> Unit = {}) {
     Card {
         Text("Настройки", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))

@@ -2,7 +2,8 @@
 
 package ru.moistranicy.app.ui
 
-import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.Color as CColor
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -438,8 +439,8 @@ fun AppRoot(
 @Composable
 private fun FloatingTabBar(selected: String?, newCount: Int, onTab: (Tab) -> Unit, onReader: () -> Unit) {
     val dark = isAppDark()
-    val barColor = if (dark) Color(0xFF242130) else Color.White
-    val border = if (dark) Color(0x22FFFFFF) else Color(0x14000000)
+    val barColor = if (dark) CColor(0xFF242130) else Color.White
+    val border = if (dark) CColor(0x22FFFFFF) else CColor(0x14000000)
     val pill = androidx.compose.foundation.shape.RoundedCornerShape(50)
     Box(
         Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp).padding(bottom = 8.dp).height(74.dp),
@@ -447,7 +448,7 @@ private fun FloatingTabBar(selected: String?, newCount: Int, onTab: (Tab) -> Uni
     ) {
         Row(
             Modifier.fillMaxWidth().height(58.dp)
-                .shadow(10.dp, pill, ambientColor = Color(0x40000000), spotColor = Color(0x40000000))
+                .shadow(10.dp, pill, ambientColor = CColor(0x40000000), spotColor = CColor(0x40000000))
                 .clip(pill).background(barColor)
                 .border(1.dp, border, pill)
                 .padding(horizontal = 6.dp),
@@ -467,7 +468,7 @@ private fun FloatingTabBar(selected: String?, newCount: Int, onTab: (Tab) -> Uni
                 ) {
                     Box(
                         Modifier.size(width = 52.dp, height = 38.dp).clip(pill)
-                            .background(if (on) Violet.copy(alpha = if (dark) 0.30f else 0.14f) else Color.Transparent),
+                            .background(if (on) Violet.copy(alpha = if (dark) 0.30f else 0.14f) else CColor.Transparent),
                         contentAlignment = Alignment.Center,
                     ) {
                         val tint = if (on) Violet else MaterialTheme.colorScheme.onSurfaceVariant
@@ -483,7 +484,7 @@ private fun FloatingTabBar(selected: String?, newCount: Int, onTab: (Tab) -> Uni
         // круг с логотипом, выступающий над капсулой
         Box(
             Modifier.size(74.dp)
-                .shadow(10.dp, androidx.compose.foundation.shape.CircleShape, ambientColor = Color(0x40000000), spotColor = Color(0x40000000))
+                .shadow(10.dp, androidx.compose.foundation.shape.CircleShape, ambientColor = CColor(0x40000000), spotColor = CColor(0x40000000))
                 .clip(androidx.compose.foundation.shape.CircleShape).background(barColor)
                 .border(1.dp, border, androidx.compose.foundation.shape.CircleShape)
                 .clickable(onClick = onReader)
