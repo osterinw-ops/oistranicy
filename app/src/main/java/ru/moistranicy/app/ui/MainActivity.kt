@@ -439,7 +439,7 @@ fun AppRoot(
 @Composable
 private fun FloatingTabBar(selected: String?, newCount: Int, onTab: (Tab) -> Unit, onReader: () -> Unit) {
     val dark = isAppDark()
-    val barColor = if (dark) CColor(0xFF242130) else Color.White
+    val barColor = if (dark) CColor(0xFF242130) else CColor.White
     val border = if (dark) CColor(0x22FFFFFF) else CColor(0x14000000)
     val pill = androidx.compose.foundation.shape.RoundedCornerShape(50)
     Box(
