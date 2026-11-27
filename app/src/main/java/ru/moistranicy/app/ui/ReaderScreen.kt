@@ -2,6 +2,8 @@
 
 package ru.moistranicy.app.ui
 
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.asImageBitmap
 import android.annotation.SuppressLint
 import android.graphics.Color as AColor
 import android.os.Handler
@@ -114,9 +116,42 @@ private val READER_THEMES = listOf(
     "Тёмная" to (Color(0xFF121212) to Color(0xFFD6D2E0)),
 )
 
-/** SVG как data-URL в base64: в «сыром» виде WebView отбрасывает картинку из-за символов % и #. */
-private fun svgData(svg: String) =
-    "data:image/svg+xml;base64," + android.util.Base64.encodeToString(svg.toByteArray(), android.util.Base64.NO_WRAP)
+/**
+ * Текстура старой бумаги для «Сепии»: пятнистые разводы (шум нескольких масштабов), мелкое зерно
+ * и затемнённые края. Рисуется один раз в малом размере и растягивается — пятна выходят мягкими.
+ */
+private fun parchment(w: Int, h: Int): androidx.compose.ui.graphics.ImageBitmap {
+    val bw = 270; val bh = (bw * h.toFloat() / w.coerceAtLeast(1)).toInt().coerceIn(200, 900)
+    val rnd = java.util.Random(7)
+    // шум: случайные значения в узлах сетки, между ними — плавная интерполяция
+    fun layer(cells: Int): (Float, Float) -> Float {
+        val gw = cells + 2; val gh = (cells * bh / bw) + 2
+        val g = FloatArray(gw * gh) { rnd.nextFloat() }
+        return { x, y ->
+            val fx = x / bw * cells; val fy = y / bw * cells
+            val ix = fx.toInt().coerceIn(0, gw - 2); val iy = fy.toInt().coerceIn(0, gh - 2)
+            val tx = (fx - ix).let { it * it * (3 - 2 * it) }; val ty = (fy - iy).let { it * it * (3 - 2 * it) }
+            val a = g[iy * gw + ix]; val b = g[iy * gw + ix + 1]
+            val c = g[(iy + 1) * gw + ix]; val d = g[(iy + 1) * gw + ix + 1]
+            (a + (b - a) * tx) * (1 - ty) + (c + (d - c) * tx) * ty
+        }
+    }
+    val l1 = layer(3); val l2 = layer(7); val l3 = layer(16); val l4 = layer(40)
+    val px = IntArray(bw * bh)
+    for (y in 0 until bh) for (x in 0 until bw) {
+        val n = 0.45f * l1(x.toFloat(), y.toFloat()) + 0.3f * l2(x.toFloat(), y.toFloat()) +
+            0.17f * l3(x.toFloat(), y.toFloat()) + 0.08f * l4(x.toFloat(), y.toFloat())
+        val stain = ((n - 0.45f) * 2.2f).coerceIn(0f, 1f)           // тёмные разводы
+        val dx = (x - bw / 2f) / (bw / 2f); val dy = (y - bh / 2f) / (bh / 2f)
+        val edge = ((dx * dx + dy * dy) / 2f).coerceIn(0f, 1f)        // края темнее
+        val grain = (rnd.nextFloat() - 0.5f) * 0.045f                  // мелкое зерно
+        val k = (1f - 0.17f * stain - 0.24f * edge * edge + grain).coerceIn(0.55f, 1.06f)
+        val r = (231 * k).toInt().coerceIn(0, 255); val gg = (210 * k).toInt().coerceIn(0, 255); val bb = (163 * k * (1f - 0.04f * stain)).toInt().coerceIn(0, 255)
+        px[y * bw + x] = (0xFF shl 24) or (r shl 16) or (gg shl 8) or bb
+    }
+    val bmp = android.graphics.Bitmap.createBitmap(px, bw, bh, android.graphics.Bitmap.Config.ARGB_8888)
+    return android.graphics.Bitmap.createScaledBitmap(bmp, w.coerceAtLeast(1), h.coerceAtLeast(1), true).asImageBitmap()
+}
 
 private fun hex(c: Color) = "#%06X".format(0xFFFFFF and c.toArgb())
 
@@ -124,25 +159,11 @@ private fun hex(c: Color) = "#%06X".format(0xFFFFFF and c.toArgb())
 private fun readerCss(w: Int, h: Int): String {
     val (bg, fg) = READER_THEMES[ReaderPrefs.theme].second
     val m = ReaderPrefs.margin
-    // сепия — с лёгкой фактурой бумаги (шум SVG), чтобы глазам было мягче
-    // сепия — старая бумага: пятнистые разводы, мелкое зерно и затемнённые края страницы
-    val paper = if (ReaderPrefs.theme == 1) {
-        val stains = "<svg xmlns='http://www.w3.org/2000/svg' width='$w' height='$h'>" +
-            "<filter id='s'><feTurbulence type='fractalNoise' baseFrequency='0.008 0.012' numOctaves='4' seed='7'/>" +
-            "<feColorMatrix values='0 0 0 0 0.45 0 0 0 0 0.30 0 0 0 0 0.12 0 0 0 0.55 -0.12'/></filter>" +
-            "<rect width='$w' height='$h' filter='url(#s)'/></svg>"
-        val grain = "<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'>" +
-            "<filter id='g'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/>" +
-            "<feColorMatrix values='0 0 0 0 0.35 0 0 0 0 0.25 0 0 0 0 0.12 0 0 0 0.10 0'/></filter>" +
-            "<rect width='180' height='180' filter='url(#g)'/></svg>"
-        "background-image:radial-gradient(ellipse at center, rgba(255,240,200,0.35) 0%, rgba(255,240,200,0) 45%, rgba(110,70,25,0.28) 100%)," +
-            "url(\"${svgData(stains)}\"),url(\"${svgData(grain)}\")!important;" +
-            "background-size:${w}px ${h}px,${w}px ${h}px,180px 180px!important;background-repeat:no-repeat,no-repeat,repeat!important;" +
-            "background-attachment:fixed!important;"
-    } else ""
+    // сепия: фон страницы рисует приложение (текстура бумаги под WebView), сама страница прозрачная
+    val pageBg = if (ReaderPrefs.theme == 1) "transparent" else hex(bg)
     val font = if (ReaderPrefs.serif) "'Noto Serif', Georgia, serif" else "Roboto, 'Noto Sans', sans-serif"
     return """
-html{width:${w}px!important;height:${h}px!important;overflow:hidden!important;margin:0!important;padding:0!important;background-color:${hex(bg)}!important;$paper}
+html{width:${w}px!important;height:${h}px!important;overflow:hidden!important;margin:0!important;padding:0!important;background-color:$pageBg!important;}
 body{margin:0!important;padding:20px ${m}px!important;box-sizing:border-box!important;width:${w}px!important;height:${h}px!important;
 -webkit-column-width:${w - 2 * m}px!important;column-width:${w - 2 * m}px!important;
 -webkit-column-gap:${2 * m}px!important;column-gap:${2 * m}px!important;column-fill:auto!important;
@@ -301,7 +322,7 @@ fun ReaderScreen(bookId: String, onBack: () -> Unit, onLibrary: () -> Unit, onSh
         if (viewW <= 0 || viewH <= 0) return@LaunchedEffect
         // место ещё не восстановлено (первая вёрстка впереди) — не перебиваем его нулём
         if (landing == null) landing = if (pages <= 1) 0f else page.toFloat() / pages
-        w.setBackgroundColor(bg.toArgb())
+        w.setBackgroundColor(if (ReaderPrefs.theme == 1) android.graphics.Color.TRANSPARENT else bg.toArgb())
         w.evaluateJavascript("window.__rd && __rd.apply(${jsString(css)}, $viewW)", null)
     }
 
@@ -311,7 +332,24 @@ fun ReaderScreen(bookId: String, onBack: () -> Unit, onLibrary: () -> Unit, onSh
     androidx.activity.compose.BackHandler(enabled = menu) { menu = false }
     // с открытым меню снизу видна основная панель приложения — отступ только сверху
     val insets = if (menu) WindowInsets.statusBars else WindowInsets.systemBars
-    Box(Modifier.fillMaxSize().background(bg).windowInsetsPadding(insets)) {
+    val sepia = ReaderPrefs.theme == 1
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val config = androidx.compose.ui.platform.LocalConfiguration.current
+    val paper = remember(sepia, config.screenWidthDp, config.screenHeightDp) {
+        if (!sepia) null else with(density) {
+            // весь экран целиком: текстура не зависит от отступов и прокрутки страниц
+            parchment((config.screenWidthDp.dp.toPx() / 2).toInt(), ((config.screenHeightDp + 80).dp.toPx() / 2).toInt())
+        }
+    }
+    Box(
+        Modifier.fillMaxSize().background(bg)
+            .then(
+                if (paper != null) Modifier.drawBehind {
+                    drawImage(paper, dstSize = androidx.compose.ui.unit.IntSize(size.width.toInt(), size.height.toInt()))
+                } else Modifier,
+            )
+            .windowInsetsPadding(insets),
+    ) {
         Column(Modifier.fillMaxSize()) {
             androidx.compose.foundation.layout.BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                 viewW = maxWidth.value.toInt()
@@ -321,7 +359,7 @@ fun ReaderScreen(bookId: String, onBack: () -> Unit, onLibrary: () -> Unit, onSh
                     factory = { ctx ->
                         WebView(ctx).apply {
                             keepScreenOn = true
-                            setBackgroundColor(bg.toArgb())
+                            setBackgroundColor(if (ReaderPrefs.theme == 1) android.graphics.Color.TRANSPARENT else bg.toArgb())
                             isVerticalScrollBarEnabled = false
                             isHorizontalScrollBarEnabled = false
                             overScrollMode = View.OVER_SCROLL_NEVER
