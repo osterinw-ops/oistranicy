@@ -51,10 +51,19 @@ for f in test.fb2 test.epub; do
   adb shell chmod 644 /data/local/tmp/$f
   adb shell run-as $PKG cp /data/local/tmp/$f files/$f
 done
+# читалка в теме «Сепия»: настройки пишем до запуска процесса
+adb shell am force-stop $PKG
+printf '<?xml version="1.0" encoding="utf-8" standalone="yes" ?>\n<map><int name="theme" value="1" /></map>\n' > /tmp/reader.xml
+adb push /tmp/reader.xml /data/local/tmp/reader.xml
+adb shell chmod 644 /data/local/tmp/reader.xml
+adb shell run-as $PKG mkdir -p shared_prefs
+adb shell run-as $PKG cp /data/local/tmp/reader.xml shared_prefs/reader.xml
 adb shell am start -W -a android.intent.action.VIEW -t application/x-fictionbook+xml \
   -d file:///data/data/$PKG/files/test.fb2 -n $PKG/.ui.MainActivity
 sleep 8; adb exec-out screencap -p > "$OUT/10-reader-fb2.png"
 adb shell input tap $((W*85/100)) $((H/2)); sleep 2; adb exec-out screencap -p > "$OUT/11-reader-page2.png"
+# последняя страница главы (проверка сдвига текста)
+for i in 1 2 3 4 5 6 7 8; do adb shell input tap $((W*85/100)) $((H/2)); sleep 1; adb exec-out screencap -p > "$OUT/11-p$i.png"; done
 adb shell input swipe $((W*80/100)) $((H/2)) $((W*20/100)) $((H/2)) 200; sleep 2
 adb shell input swipe $((W/2)) $((H/2)) $((W/2)) $((H/2)) 900; sleep 2; adb exec-out screencap -p > "$OUT/12-reader-menu.png"
 adb shell input keyevent 4; sleep 2
