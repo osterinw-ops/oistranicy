@@ -278,13 +278,29 @@ private fun AllResults(retry: () -> Unit, onBook: (String) -> Unit, onAuthor: (S
     val werr = works.error
     when {
         works.loading && authors.loading -> Loading()
-        works.loadedQuery == null && !works.loading -> CenterMessage(
-            "Найдите книгу или автора и добавьте книги на полку.\n\nПоиск идёт по базе FantLab — " +
-                "в ней есть циклы и рейтинги. Нет нужной книги — попробуйте «Google Книги».",
-        )
+        works.loadedQuery == null && !works.loading -> {
+            // до поиска — 5 новинок этого года (NEW); при каждом запуске приложения набор новый
+            LaunchedEffect(Unit) { runCatching { ru.moistranicy.app.data.Novelties.load() } }
+            val news = ru.moistranicy.app.data.Novelties.books
+            if (news.isNullOrEmpty()) CenterMessage(
+                "Найдите книгу или автора и добавьте книги на полку.\n\nПоиск идёт по базе FantLab — " +
+                    "в ней есть циклы и рейтинги. Нет нужной книги — попробуйте «Google Книги».",
+            ) else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp + barSpace())) {
+                item { SearchSectionTitle("Новинки для вас") }
+                items(news, key = { "n:" + it.id }) { b -> BookRow(b) { onBook(b.id) }; RowDivider() }
+                item {
+                    Text(
+                        "Книги этого года у ваших любимых авторов и в ваших циклах. Найдите любую другую книгу через поиск выше.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(16.dp),
+                    )
+                }
+            }
+        }
         werr != null && authors.items.isEmpty() -> CenterMessage(errorText(werr), "Повторить", retry)
         !works.loading && !authors.loading && books.isEmpty() && authors.items.isEmpty() -> CenterMessage("Ничего не найдено")
-        else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
+        else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp + barSpace())) {
             if (authors.items.isNotEmpty()) {
                 item { SearchSectionTitle("Авторы") }
                 val shown = if (SearchHolder.allAuthors) authors.items else authors.items.take(3)
@@ -340,7 +356,7 @@ private fun SearchSectionTitle(text: String) {
 private fun BookResults(st: PagedState<Book>, retry: () -> Unit, onBook: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     Results(st, retry) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp + barSpace())) {
             items(st.items.filter { !isHiddenType(it.workType) }) { b -> BookRow(b) { onBook(b.id) }; RowDivider() }
             if (st.hasMore) item { LoadMoreFooter(st.loadingMore) { st.more(scope) } }
         }

@@ -2,6 +2,10 @@
 
 package ru.moistranicy.app.ui
 
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.Color as CColor
 import androidx.compose.ui.semantics.contentDescription
@@ -88,6 +92,15 @@ import ru.moistranicy.app.data.AppPrefs
 import ru.moistranicy.app.data.ShelfRepository
 
 val NoInsets = WindowInsets(0, 0, 0, 0)
+
+/** Высота нижней «капсулы» вместе с отступом снизу (без системной панели навигации). */
+val BAR_HEIGHT = 84.dp
+
+/** Сколько места снизу занимает «капсула»: на столько списки отступают от низа экрана. */
+val LocalBarSpace = androidx.compose.runtime.compositionLocalOf { 0.dp }
+
+@Composable
+fun barSpace(): androidx.compose.ui.unit.Dp = LocalBarSpace.current
 
 /** Счётчики «сбросов» вкладок: экраны прокручиваются к началу, когда значение меняется. */
 object TabReset {
@@ -263,36 +276,13 @@ fun AppRoot(
     CompositionLocalProvider(LocalOpenProfile provides null) { // соцфункции пока отключены
     Scaffold(
         contentWindowInsets = NoInsets,
-        bottomBar = {
-            if (!inReader || ReaderUi.menu) {
-                fun onTab(t: Tab) {
-                    if (currentTab == t.route) {
-                        // повторное нажатие: сбросить вкладку к начальной странице
-                        when (t.route) {
-                            "search" -> resetSearch()
-                            "shelf" -> ShelfUi.reset()
-                            "recs" -> resetRecsFilters()
-                        }
-                        TabReset.bump(t.route)
-                        nav.navigate(t.route) {
-                            popUpTo(nav.graph.findStartDestination().id) { saveState = false }
-                            launchSingleTop = true
-                            restoreState = false
-                        }
-                    } else {
-                        goTab(t.route)
-                    }
-                    currentTab = t.route
-                }
-                FloatingTabBar(
-                    selected = route,
-                    newCount = newCount,
-                    onTab = ::onTab,
-                    onReader = { openReader() },
-                )
-            }
-        },
     ) { pad ->
+        // нижняя «капсула» висит поверх страницы: по бокам и сквозь неё видно содержимое,
+        // а списки получают отступ снизу barSpace(), чтобы последние строки не прятались под ней
+        val showBar = !inReader || ReaderUi.menu
+        val navInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        CompositionLocalProvider(LocalBarSpace provides if (showBar) BAR_HEIGHT + navInset else 0.dp) {
+        Box(Modifier.fillMaxSize()) {
         // свайп влево / вправо на главных разделах переключает соседний раздел (Полка ↔ Авторы ↔ …);
         // горизонтальные прокрутки и звёзды оценки внутри экранов забирают жест себе раньше
         val swipeTab = tabs.indexOfFirst { it.route == route }
@@ -324,7 +314,7 @@ fun AppRoot(
         val slide = androidx.compose.animation.core.tween<androidx.compose.ui.unit.IntOffset>(260)
         val fade = androidx.compose.animation.core.tween<Float>(200)
         NavHost(
-            nav, startDestination = "shelf", modifier = Modifier.padding(pad).then(swipeModifier),
+            nav, startDestination = "shelf", modifier = Modifier.padding(top = pad.calculateTopPadding()).then(swipeModifier),
             enterTransition = {
                 when (val d = dir(initialState.destination.route, targetState.destination.route)) {
                     0 -> androidx.compose.animation.fadeIn(fade)
@@ -351,6 +341,13 @@ fun AppRoot(
             }
             composable("opds") {
                 OpdsScreen(onBack = { nav.popBackStack() }, onOpenBook = { id -> nav.navigate("reader/$id") })
+            }
+            composable("opds/search/{q}") { e ->
+                OpdsScreen(
+                    onBack = { nav.popBackStack() },
+                    onOpenBook = { id -> nav.navigate("reader/$id") },
+                    initialQuery = e.arguments?.getString("q"),
+                )
             }
             composable("library") {
                 LibraryScreen(
@@ -417,6 +414,7 @@ fun AppRoot(
                     onBook = { nav.openBook(it) },
                     onAuthor = { nav.openAuthor(it) },
                     onRead = { nav.navigate("reader/$it") },
+                    onOpdsSearch = { q -> nav.navigate("opds/search/" + android.net.Uri.encode(q)) },
                 )
             }
             composable("author/{id}") { e ->
@@ -427,36 +425,76 @@ fun AppRoot(
                 )
             }
         }
+        Box(Modifier.align(Alignment.BottomCenter)) {
+            if (!inReader || ReaderUi.menu) {
+                fun onTab(t: Tab) {
+                    if (currentTab == t.route) {
+                        // повторное нажатие: сбросить вкладку к начальной странице
+                        when (t.route) {
+                            "search" -> resetSearch()
+                            "shelf" -> ShelfUi.reset()
+                            "recs" -> resetRecsFilters()
+                        }
+                        TabReset.bump(t.route)
+                        nav.navigate(t.route) {
+                            popUpTo(nav.graph.findStartDestination().id) { saveState = false }
+                            launchSingleTop = true
+                            restoreState = false
+                        }
+                    } else {
+                        goTab(t.route)
+                    }
+                    currentTab = t.route
+                }
+                FloatingTabBar(
+                    selected = route,
+                    newCount = newCount,
+                    onTab = ::onTab,
+                    onReader = { openReader() },
+                )
+            }
+        }
+        }
+        }
     }
     }
 }
 
 
 /**
- * Нижняя панель-«капсула»: висит над экраном со скруглёнными краями, без подписей.
- * По центру — круг с логотипом, выступающий над капсулой: открывает читалку.
+ * Нижняя панель-«капсула»: висит над страницей (чуть прозрачная), без подписей.
+ * Выбранный раздел подсвечивается фоном, который раздвигается от центра к краям.
+ * По центру — круглая кнопка читалки, чуть выше капсулы. Вошли в Яндекс — вместо значка профиля аватар.
  */
 @Composable
 private fun FloatingTabBar(selected: String?, newCount: Int, onTab: (Tab) -> Unit, onReader: () -> Unit) {
     val dark = isAppDark()
-    val barColor = if (dark) CColor(0xFF242130) else CColor.White
+    val barColor = (if (dark) CColor(0xFF242130) else CColor.White).copy(alpha = 0.9f)
     val border = if (dark) CColor(0x22FFFFFF) else CColor(0x14000000)
     val pill = androidx.compose.foundation.shape.RoundedCornerShape(50)
+    val circle = androidx.compose.foundation.shape.CircleShape
+    val avatar = ru.moistranicy.app.data.Account.avatarUrl.takeIf { ru.moistranicy.app.data.Account.isLoggedIn }
     Box(
-        Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp).padding(bottom = 8.dp).height(74.dp),
+        Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 14.dp).padding(bottom = 8.dp).height(BAR_HEIGHT - 8.dp),
         contentAlignment = Alignment.Center,
     ) {
         Row(
-            Modifier.fillMaxWidth().height(58.dp)
-                .shadow(10.dp, pill, ambientColor = CColor(0x40000000), spotColor = CColor(0x40000000))
+            Modifier.fillMaxWidth().height(60.dp)
+                .shadow(6.dp, pill, ambientColor = CColor(0x33000000), spotColor = CColor(0x33000000))
                 .clip(pill).background(barColor)
                 .border(1.dp, border, pill)
                 .padding(horizontal = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             tabs.forEachIndexed { i, t ->
-                if (i == 2) Spacer(Modifier.width(76.dp))
+                if (i == 2) Spacer(Modifier.width(78.dp))
                 val on = selected == t.route
+                // фон выбранного раздела раздвигается от центра к краям
+                val grow by androidx.compose.animation.core.animateFloatAsState(
+                    if (on) 1f else 0f,
+                    androidx.compose.animation.core.tween(280, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+                    label = "tabBg",
+                )
                 Box(
                     Modifier.weight(1f).fillMaxHeight()
                         .clickable(
@@ -467,38 +505,44 @@ private fun FloatingTabBar(selected: String?, newCount: Int, onTab: (Tab) -> Uni
                     contentAlignment = Alignment.Center,
                 ) {
                     Box(
-                        Modifier.size(width = 52.dp, height = 38.dp).clip(pill)
-                            .background(if (on) Violet.copy(alpha = if (dark) 0.30f else 0.14f) else CColor.Transparent),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        val tint = if (on) Violet else MaterialTheme.colorScheme.onSurfaceVariant
-                        val icon: @Composable () -> Unit = {
-                            if (t.res != null) Icon(androidx.compose.ui.res.painterResource(t.res), null, tint = tint, modifier = Modifier.size(25.dp))
-                            else Icon(t.icon!!, null, tint = tint, modifier = Modifier.size(25.dp))
+                        Modifier.size(width = 58.dp, height = 42.dp)
+                            .graphicsLayer { scaleX = grow; alpha = grow }
+                            .clip(pill)
+                            .background(Violet.copy(alpha = if (dark) 0.32f else 0.16f)),
+                    )
+                    val tint = if (on) Violet else MaterialTheme.colorScheme.onSurfaceVariant
+                    val icon: @Composable () -> Unit = {
+                        when {
+                            t.route == "profile" && avatar != null -> coil.compose.AsyncImage(
+                                avatar, null, contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                modifier = Modifier.size(28.dp).clip(circle)
+                                    .border(if (on) 2.dp else 0.dp, if (on) Violet else CColor.Transparent, circle),
+                            )
+                            t.res != null -> Icon(androidx.compose.ui.res.painterResource(t.res), null, tint = tint, modifier = Modifier.size(25.dp))
+                            else -> Icon(t.icon!!, null, tint = tint, modifier = Modifier.size(25.dp))
                         }
-                        if (t.route == "shelf" && newCount > 0) BadgedBox(badge = { Badge { Text("$newCount") } }) { icon() } else icon()
                     }
+                    if (t.route == "shelf" && newCount > 0) BadgedBox(badge = { Badge { Text("$newCount") } }) { icon() } else icon()
                 }
             }
         }
-        // круг с логотипом, выступающий над капсулой
+        // кнопка читалки: фиолетовый круг с книгой в белом ободке, чуть выше капсулы
         Box(
-            Modifier.size(74.dp)
-                .shadow(10.dp, androidx.compose.foundation.shape.CircleShape, ambientColor = CColor(0x40000000), spotColor = CColor(0x40000000))
-                .clip(androidx.compose.foundation.shape.CircleShape).background(barColor)
-                .border(1.dp, border, androidx.compose.foundation.shape.CircleShape)
+            Modifier.size(70.dp)
+                .shadow(8.dp, circle, ambientColor = CColor(0x40000000), spotColor = CColor(0x40000000))
+                .clip(circle).background(CColor.White)
                 .clickable(onClick = onReader)
                 .semantics { contentDescription = "Читалка" },
             contentAlignment = Alignment.Center,
         ) {
-            Box(Modifier.size(52.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(15.dp))) {
+            Box(Modifier.size(60.dp).clip(circle)) {
                 androidx.compose.foundation.Image(
                     androidx.compose.ui.res.painterResource(ru.moistranicy.app.R.drawable.ic_launcher_background), null,
                     modifier = Modifier.matchParentSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                 )
                 androidx.compose.foundation.Image(
                     androidx.compose.ui.res.painterResource(ru.moistranicy.app.R.drawable.ic_launcher_foreground), null,
-                    modifier = Modifier.matchParentSize().scale(1.35f), contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.matchParentSize().scale(1.45f), contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                 )
             }
         }

@@ -73,7 +73,7 @@ import ru.moistranicy.app.data.reader.OpdsFeed
  * разделы, поиск, книги со скачиванием FB2/EPUB прямо в читалку.
  */
 @Composable
-fun OpdsScreen(onBack: () -> Unit, onOpenBook: (String) -> Unit) {
+fun OpdsScreen(onBack: () -> Unit, onOpenBook: (String) -> Unit, initialQuery: String? = null) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var catalogs by remember { mutableStateOf(Opds.catalogs()) }
@@ -90,7 +90,7 @@ fun OpdsScreen(onBack: () -> Unit, onOpenBook: (String) -> Unit) {
         loading = true; error = null
         scope.launch {
             try {
-                val f = Opds.load(url, cat)
+                val f = Opds.loadPage(url, cat)
                 if (append && stack.isNotEmpty()) {
                     val top = stack.removeAt(stack.lastIndex)
                     stack.add(top.copy(entries = top.entries + f.entries, next = f.next))
@@ -98,10 +98,30 @@ fun OpdsScreen(onBack: () -> Unit, onOpenBook: (String) -> Unit) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                error = e.message ?: "Каталог не открылся"
+                error = Opds.humanError(e)
             } finally {
                 loading = false
             }
+        }
+    }
+
+    // «Найти в OPDS» из карточки книги: сразу ищем в избранном каталоге
+    LaunchedEffect(initialQuery) {
+        val q = initialQuery?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+        val cat = Opds.favorite() ?: return@LaunchedEffect
+        catalog = cat; query = q; loading = true; error = null
+        try {
+            val root = Opds.load(cat.url, cat)
+            stack.add(root)
+            val tpl = root.searchTemplate
+            if (tpl == null) error = "В этом каталоге нет поиска"
+            else stack.add(Opds.loadPage(Opds.searchUrl(tpl, q), cat))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            error = Opds.humanError(e)
+        } finally {
+            loading = false
         }
     }
 
@@ -127,7 +147,7 @@ fun OpdsScreen(onBack: () -> Unit, onOpenBook: (String) -> Unit) {
             } catch (ex: CancellationException) {
                 throw ex
             } catch (ex: Exception) {
-                error = ex.message ?: "Книга не скачалась"
+                error = "Книга не скачалась: " + Opds.humanError(ex).replaceFirstChar { it.lowercase() }
             } finally {
                 busy = null
             }
@@ -152,11 +172,11 @@ fun OpdsScreen(onBack: () -> Unit, onOpenBook: (String) -> Unit) {
         Column(Modifier.padding(pad).fillMaxSize()) {
             if (catalog == null) {
                 // список своих каталогов
-                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 16.dp + barSpace()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     item {
                         Text(
                             "Добавьте адрес своего OPDS-каталога — домашней библиотеки, Calibre или магазина. " +
-                                "Книги в FB2 и EPUB скачиваются сразу в читалку.",
+                                "Книги в FB2 и EPUB скачиваются сразу в читалку. Звёздочка — каталог для кнопки «Найти в OPDS» в карточке книги.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -176,6 +196,16 @@ fun OpdsScreen(onBack: () -> Unit, onOpenBook: (String) -> Unit) {
                             Column(Modifier.weight(1f)) {
                                 Text(c.title.ifBlank { c.url }, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                                 Text(c.url, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            // звёздочка — избранный каталог для поиска из карточки книги
+                            IconButton(onClick = {
+                                catalogs = catalogs.map { it.copy(favorite = it.url == c.url && !c.favorite) }
+                                Opds.saveCatalogs(catalogs)
+                            }) {
+                                Icon(
+                                    androidx.compose.ui.res.painterResource(if (c.favorite) ru.moistranicy.app.R.drawable.ic_star else ru.moistranicy.app.R.drawable.ic_star_border),
+                                    if (c.favorite) "Избранный каталог" else "Сделать избранным", tint = Coral,
+                                )
                             }
                             IconButton(onClick = {
                                 catalogs = catalogs - c; Opds.saveCatalogs(catalogs)
@@ -202,7 +232,7 @@ fun OpdsScreen(onBack: () -> Unit, onOpenBook: (String) -> Unit) {
                         Spacer(Modifier.height(12.dp))
                         Button(onClick = { open(catalog!!.url, catalog!!) }) { Text("Повторить") }
                     }
-                    else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
+                    else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp + barSpace())) {
                         if (feed.entries.isEmpty()) item {
                             Text("Здесь пусто", Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
@@ -210,7 +240,7 @@ fun OpdsScreen(onBack: () -> Unit, onOpenBook: (String) -> Unit) {
                         if (feed.next != null) item {
                             Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
                                 if (loading) CircularProgressIndicator(Modifier.size(24.dp))
-                                else OutlinedButton(onClick = { open(feed.next, catalog!!, append = true) }) { Text("Показать ещё") }
+                                else OutlinedButton(onClick = { open(feed.next, catalog!!, append = true) }) { Text("Показать ещё 100") }
                             }
                         }
                     }

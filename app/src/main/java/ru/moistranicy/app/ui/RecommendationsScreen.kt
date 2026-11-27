@@ -309,7 +309,7 @@ fun RecommendationsScreen(onBook: (String) -> Unit) {
                     "Пока нечего посоветовать.\n\nОтметьте несколько книг как «Прочитал» и поставьте оценки — " +
                         "рекомендации подбираются по тому, что вам понравилось.",
                 )
-                else -> Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
+                else -> Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(bottom = barSpace())) {
                     shown.forEach { r ->
                         RecCard(
                             r,

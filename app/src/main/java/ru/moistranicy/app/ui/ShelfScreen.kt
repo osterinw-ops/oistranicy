@@ -240,8 +240,22 @@ private fun buildGroups(
             rating = averageRating(list.map { it.book.id }, shelf),
         )
     }.sortedBy { it.title }
+    // серия с тем же названием и автором, что и отслеживаемый цикл (другой id на FantLab, подцикл,
+    // книга из импорта), — не отдельной строкой, а внутри этого цикла: без дублей «Геном», «Дозоры»
+    fun sameAuthor(a: Group, b: Group): Boolean =
+        (a.authorId != null && a.authorId == b.authorId) ||
+            (a.author != null && b.author != null &&
+                normTitle(a.author.substringBefore(", ")) == normTitle(b.author.substringBefore(", ")))
+    val freeSeries = mutableListOf<Group>()
+    for (sg in seriesGroups) {
+        val i = cycleGroups.indexOfFirst { cg -> normTitle(cg.title.orEmpty()) == normTitle(sg.title.orEmpty()) && sameAuthor(cg, sg) }
+        if (i < 0) { freeSeries += sg; continue }
+        val cg = cycleGroups[i]
+        val extra = sg.lines.filter { l -> cg.lines.none { normTitle(it.title) == normTitle(l.title) } }
+        cycleGroups[i] = cg.copy(lines = cg.lines + extra)
+    }
     val singles = rest.filter { it.book.seriesName == null }
-    val result = cycleGroups + seriesGroups
+    val result = cycleGroups + freeSeries
     if (status == ReadStatus.READ) {
         // «Прочитал»: всё — и прочитанные серии, и отдельные книги — по авторам
         fun keyOf(id: String?, name: String?) =
@@ -410,7 +424,7 @@ fun ShelfScreen(
                 }
             }
             if (current == ReadStatus.READING && (reading.isNotEmpty() || files.isNotEmpty())) {
-                LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(vertical = 6.dp)) {
+                LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(top = 6.dp, bottom = 6.dp + barSpace())) {
                     item(key = "add-book") {
                         AddBookButton(onOpen = onRead, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
                         androidx.compose.material3.TextButton(onClick = onOpds, modifier = Modifier.padding(horizontal = 8.dp)) {
@@ -428,7 +442,7 @@ fun ShelfScreen(
                     items(readingNoFile, key = { it.book.id }) { e -> ReadingRow(e, cycles) { onBook(e.book.id) } }
                     if (files.isNotEmpty()) item(key = "files-hint") {
                         Text(
-                            "Долгое нажатие на книгу-файл — удалить файл с телефона.",
+                            "Долгое нажатие на книгу-файл — удалить её с телефона и с полки.",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(16.dp),
@@ -471,7 +485,7 @@ fun ShelfScreen(
                     },
                 )
             } else {
-                LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 16.dp)) {
+                LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 16.dp + barSpace())) {
                     checkResult?.let { msg ->
                         item {
                             Text(

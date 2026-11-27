@@ -160,7 +160,7 @@ private fun AuthorContent(details: AuthorDetails, onBook: (String) -> Unit) {
     // все циклы изначально свёрнуты
     val expanded = remember(d.id) { mutableStateMapOf<String, Boolean>() }
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp + barSpace())) {
         item {
             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(80.dp)) {

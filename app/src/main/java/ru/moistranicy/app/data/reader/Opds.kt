@@ -49,7 +49,14 @@ data class OpdsFeed(
 )
 
 /** Сохранённый каталог: адрес и (необязательно) логин с паролем. */
-data class OpdsCatalog(val title: String, val url: String, val user: String = "", val password: String = "")
+data class OpdsCatalog(
+    val title: String,
+    val url: String,
+    val user: String = "",
+    val password: String = "",
+    /** Избранный: в нём ищет ссылка «Найти в OPDS» из карточки книги. */
+    val favorite: Boolean = false,
+)
 
 /**
  * OPDS-каталоги: только форма, без готовых ссылок. Пользователь сам вводит адрес своего каталога
@@ -66,14 +73,40 @@ object Opds {
         val a = JSONArray(store.readText())
         (0 until a.length()).map { i ->
             val o = a.getJSONObject(i)
-            OpdsCatalog(o.optString("title"), o.getString("url"), o.optString("user"), o.optString("password"))
+            OpdsCatalog(o.optString("title"), o.getString("url"), o.optString("user"), o.optString("password"), o.optBoolean("favorite"))
         }
     }.getOrDefault(emptyList())
 
     fun saveCatalogs(list: List<OpdsCatalog>) {
         val a = JSONArray()
-        list.forEach { c -> a.put(JSONObject().put("title", c.title).put("url", c.url).put("user", c.user).put("password", c.password)) }
+        list.forEach { c -> a.put(JSONObject().put("title", c.title).put("url", c.url).put("user", c.user).put("password", c.password).put("favorite", c.favorite)) }
         runCatching { store.writeText(a.toString()) }
+    }
+
+    /** Каталог для поиска из карточки книги: отмеченный звёздочкой, а если каталог один — он. */
+    fun favorite(): OpdsCatalog? = catalogs().let { all -> all.firstOrNull { it.favorite } ?: all.singleOrNull() }
+
+    /** Ошибка по-русски и коротко. */
+    fun humanError(e: Throwable): String = when (e) {
+        is java.net.UnknownHostException -> "Нет интернета или неверный адрес каталога"
+        is java.net.SocketTimeoutException -> "Каталог не отвечает, попробуйте позже"
+        is java.net.ConnectException -> "Не удалось подключиться к каталогу"
+        is javax.net.ssl.SSLException -> "Ошибка защищённого соединения с каталогом"
+        is java.net.MalformedURLException -> "Неверный адрес каталога"
+        is org.xmlpull.v1.XmlPullParserException -> "По этому адресу нет OPDS-каталога"
+        is IOException -> e.message?.takeIf { m -> m.any { it in 'а'..'я' || it in 'А'..'Я' } } ?: "Ошибка сети"
+        else -> "Что-то пошло не так"
+    }
+
+    /** Страница списка — по 100 записей: догружаем следующие части ленты, пока не наберём. */
+    suspend fun loadPage(url: String, cat: OpdsCatalog, size: Int = 100): OpdsFeed {
+        var feed = load(url, cat)
+        var guard = 0
+        while (feed.entries.size < size && feed.next != null && guard++ < 10) {
+            val more = runCatching { load(feed.next!!, cat) }.getOrNull() ?: break
+            feed = feed.copy(entries = feed.entries + more.entries, next = more.next)
+        }
+        return feed
     }
 
     fun formatOf(l: OpdsLink): String? {
@@ -105,6 +138,8 @@ object Opds {
                 return@repeat
             }
             if (code == 401 || code == 403) throw IOException("Каталог требует логин и пароль (или они неверны)")
+            if (code == 404) throw IOException("Каталог не найден по этому адресу")
+            if (code >= 500) throw IOException("Каталог временно не работает")
             if (code !in 200..299) throw IOException("Каталог ответил ошибкой $code")
             return c
         }

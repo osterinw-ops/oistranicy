@@ -95,6 +95,7 @@ fun BookScreen(
     onBook: (String) -> Unit,
     onAuthor: (String) -> Unit,
     onRead: (String) -> Unit = {},
+    onOpdsSearch: (String) -> Unit = {},
 ) {
     val shelf by ShelfRepository.entries.collectAsState()
     val library by ru.moistranicy.app.data.reader.Library.books.collectAsState()
@@ -237,7 +238,8 @@ fun BookScreen(
                 .padding(pad)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = 16.dp)
+                .padding(bottom = barSpace()),
         ) {
             if (loading) LinearProgressIndicator(Modifier.fillMaxWidth().padding(bottom = 8.dp))
             if (book.isCycle) {
@@ -352,6 +354,15 @@ fun BookScreen(
                         }.padding(vertical = 2.dp),
                     )
                     }
+                    // поиск в избранном OPDS-каталоге (если каталог один — он и избранный)
+                    if (ru.moistranicy.app.data.reader.Opds.favorite() != null) {
+                        Text(
+                            "Найти в OPDS →",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.clickable { onOpdsSearch(book.title) }.padding(vertical = 2.dp),
+                        )
+                    }
                 }
             }
 
@@ -442,6 +453,13 @@ fun BookScreen(
                 }
             }
 
+            if (book.annotation.isNotBlank()) {
+                Spacer(Modifier.height(14.dp))
+                Text("Аннотация", style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.height(4.dp))
+                Text(book.annotation, style = MaterialTheme.typography.bodyMedium)
+            }
+
             if (book.genres.isNotEmpty()) {
                 Spacer(Modifier.height(14.dp))
                 // теги стиля — оранжевым текстом через «|»
@@ -451,13 +469,6 @@ fun BookScreen(
                     color = Coral,
                     fontWeight = FontWeight.Medium,
                 )
-            }
-
-            if (book.annotation.isNotBlank()) {
-                Spacer(Modifier.height(14.dp))
-                Text("Аннотация", style = MaterialTheme.typography.titleSmall)
-                Spacer(Modifier.height(4.dp))
-                Text(book.annotation, style = MaterialTheme.typography.bodyMedium)
             }
 
             val children = details?.children.orEmpty()

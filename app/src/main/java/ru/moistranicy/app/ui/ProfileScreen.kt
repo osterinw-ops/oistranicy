@@ -86,7 +86,7 @@ fun ProfileScreen(
 
     Scaffold(contentWindowInsets = NoInsets, topBar = { AppTopBar("Мой профиль") }) { pad ->
         Column(
-            Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+            Modifier.padding(pad).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = barSpace()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             AccountCard()

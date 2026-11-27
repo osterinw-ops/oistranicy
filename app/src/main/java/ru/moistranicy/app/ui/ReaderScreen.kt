@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -113,6 +114,10 @@ private val READER_THEMES = listOf(
     "Тёмная" to (Color(0xFF121212) to Color(0xFFD6D2E0)),
 )
 
+/** SVG как data-URL в base64: в «сыром» виде WebView отбрасывает картинку из-за символов % и #. */
+private fun svgData(svg: String) =
+    "data:image/svg+xml;base64," + android.util.Base64.encodeToString(svg.toByteArray(), android.util.Base64.NO_WRAP)
+
 private fun hex(c: Color) = "#%06X".format(0xFFFFFF and c.toArgb())
 
 /** Стили читателя поверх стилей книги + разбиение на страницы колонками. */
@@ -125,13 +130,13 @@ private fun readerCss(w: Int, h: Int): String {
         val stains = "<svg xmlns='http://www.w3.org/2000/svg' width='$w' height='$h'>" +
             "<filter id='s'><feTurbulence type='fractalNoise' baseFrequency='0.008 0.012' numOctaves='4' seed='7'/>" +
             "<feColorMatrix values='0 0 0 0 0.45 0 0 0 0 0.30 0 0 0 0 0.12 0 0 0 0.55 -0.12'/></filter>" +
-            "<rect width='100%' height='100%' filter='url(%23s)'/></svg>"
+            "<rect width='$w' height='$h' filter='url(#s)'/></svg>"
         val grain = "<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'>" +
             "<filter id='g'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/>" +
             "<feColorMatrix values='0 0 0 0 0.35 0 0 0 0 0.25 0 0 0 0 0.12 0 0 0 0.10 0'/></filter>" +
-            "<rect width='100%' height='100%' filter='url(%23g)'/></svg>"
+            "<rect width='180' height='180' filter='url(#g)'/></svg>"
         "background-image:radial-gradient(ellipse at center, rgba(255,240,200,0.35) 0%, rgba(255,240,200,0) 45%, rgba(110,70,25,0.28) 100%)," +
-            "url(\"data:image/svg+xml;utf8,$stains\"),url(\"data:image/svg+xml;utf8,$grain\")!important;" +
+            "url(\"${svgData(stains)}\"),url(\"${svgData(grain)}\")!important;" +
             "background-size:${w}px ${h}px,${w}px ${h}px,180px 180px!important;background-repeat:no-repeat,no-repeat,repeat!important;" +
             "background-attachment:fixed!important;"
     } else ""
@@ -157,12 +162,25 @@ h1,h2,h3,h4,.title{break-after:avoid}
 private const val READER_JS = """
 (function(){
  var R = window.__rd || (window.__rd = {});
- R.count = function(){ var w = R.w || window.innerWidth; return Math.max(1, Math.ceil((document.documentElement.scrollWidth - 2) / w)); };
+ R.count = function(){
+  var w = R.w || window.innerWidth;
+  // ширина всех колонок — по body: свой сдвиг (transform) на неё не влияет
+  var sw = document.body ? document.body.scrollWidth : 0;
+  if (!sw || sw < w) sw = document.documentElement.scrollWidth;
+  return Math.max(1, Math.ceil((sw - 2) / w));
+ };
  R.report = function(){
   RdBridge.onLayout(R.count());
  };
  if (!R.resizeHooked) { R.resizeHooked = true; window.addEventListener('resize', function(){ setTimeout(R.report, 60); }); }
- R.go = function(p){ var x = p * (R.w || window.innerWidth); window.scrollTo(x, 0); document.documentElement.scrollLeft = x; document.body.scrollLeft = x; };
+ // листаем сдвигом body, а не прокруткой: прокрутку браузер обрезает на последней странице главы,
+ // и текст уезжал вправо; сдвиг ещё и анимируется — страница «съезжает» как при перелистывании
+ R.go = function(p, anim){
+  var x = p * (R.w || window.innerWidth), b = document.body;
+  window.scrollTo(0, 0); document.documentElement.scrollLeft = 0;
+  b.style.transition = anim ? 'transform 230ms cubic-bezier(.2,.7,.3,1)' : 'none';
+  b.style.transform = 'translate3d(' + (-x) + 'px,0,0)';
+ };
  R.apply = function(css, w){
   R.w = w;
   var vp = document.querySelector('meta[name=viewport]');
@@ -230,9 +248,9 @@ fun ReaderScreen(bookId: String, onBack: () -> Unit, onLibrary: () -> Unit, onSh
 
     fun atEnd() = chapter == current.chapters.lastIndex && page >= pages - 1
 
-    fun go(p: Int) {
+    fun go(p: Int, anim: Boolean = true) {
         page = p.coerceIn(0, pages - 1)
-        web?.evaluateJavascript("window.__rd && __rd.go($page)", null)
+        web?.evaluateJavascript("window.__rd && __rd.go($page, ${anim})", null)
         save()
         if (atEnd() && !current.finishAsked) finishDialog = true
     }
@@ -265,7 +283,7 @@ fun ReaderScreen(bookId: String, onBack: () -> Unit, onLibrary: () -> Unit, onSh
                 else -> (l * pages + 0.001f).toInt()
             }
             landing = null
-            go(target)
+            go(target, anim = false)
         }
     }
     val bridge = remember(bookId) {
@@ -424,7 +442,8 @@ fun ReaderScreen(bookId: String, onBack: () -> Unit, onLibrary: () -> Unit, onSh
                 var seek by remember { mutableFloatStateOf(current.progress) }
                 var seeking by remember { mutableStateOf(false) }
                 Row(
-                    Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp, bottom = 4.dp),
+                    // под нижней «капсулой» разделов: ползунок над ней
+                    Modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp, bottom = 4.dp + barSpace()),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     IconButton(onClick = { menu = false; sheet = "font" }) {
@@ -601,7 +620,7 @@ fun LibraryScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
             if (list.isEmpty()) {
                 CenterMessage("Добавьте книгу в формате FB2 или EPUB — она откроется в читалке, а на полке встанет в «Читаю».")
             } else {
-                LazyColumn(Modifier.fillMaxSize()) {
+                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = barSpace())) {
                     items(list, key = { it.id }) { b ->
                         Row(
                             Modifier.fillMaxWidth()
@@ -750,9 +769,18 @@ fun FileBookRow(
     if (ask) {
         AlertDialog(
             onDismissRequest = { ask = false },
-            title = { Text("Удалить файл книги?") },
-            text = { Text("Файл «${b.title}» будет удалён с телефона. Книга на полке и её статус останутся.") },
-            confirmButton = { TextButton(onClick = { Library.remove(b.id); ask = false }) { Text("Удалить") } },
+            title = { Text("Удалить книгу?") },
+            text = { Text("«${b.title}» будет удалена полностью: файл с телефона и книга с полки (статус, оценка, дата прочтения).") },
+            confirmButton = {
+                TextButton(onClick = {
+                    b.linkedId?.let { lid ->
+                        ru.moistranicy.app.data.ShelfRepository.remove(lid)
+                        ru.moistranicy.app.data.CycleRepository.onBookRemoved(lid)
+                    }
+                    Library.remove(b.id)
+                    ask = false
+                }) { Text("Удалить") }
+            },
             dismissButton = { TextButton(onClick = { ask = false }) { Text("Отмена") } },
         )
     }
